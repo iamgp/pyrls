@@ -43,13 +43,42 @@ pub struct ReleaseCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ReleaseSubcommand {
-    Pr,
-    Tag,
+    Pr(PreReleaseArgs),
+    Tag(PreReleaseArgs),
     Publish,
+}
+
+#[derive(Debug, Args)]
+pub struct PreReleaseArgs {
+    /// Create a pre-release version (alpha, beta, or rc)
+    #[arg(long, value_name = "KIND", conflicts_with = "finalize")]
+    pub pre_release: Option<PreReleaseKind>,
+
+    /// Strip the pre-release suffix to produce a final release
+    #[arg(long, conflicts_with = "pre_release")]
+    pub finalize: bool,
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum PreReleaseKind {
+    Alpha,
+    Beta,
+    Rc,
+    Post,
+    Dev,
 }
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    if cli.no_color {
+        unsafe { std::env::set_var("NO_COLOR", "1") };
+    }
+
+    if cli.verbose {
+        unsafe { std::env::set_var("PYRLS_VERBOSE", "1") };
+        eprintln!("[pyrls] verbose mode enabled");
+    }
 
     match &cli.command {
         Command::Init => init::run(&cli),

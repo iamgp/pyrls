@@ -1,11 +1,19 @@
 use anyhow::{Context, Result};
 
-use crate::{analysis, cli::Cli, config::Config, git::GitRepository};
+use crate::{analysis, cli::Cli, config::Config, git::GitRepository, progress};
 
 pub fn run(cli: &Cli) -> Result<()> {
     let repo = GitRepository::discover(".").context("failed to inspect git repository")?;
     let config = Config::load(&cli.config)?;
-    let analysis = analysis::analyze(&repo, &config)?;
+
+    let analysis = if cli.dry_run {
+        analysis::analyze(&repo, &config)?
+    } else {
+        let sp = progress::spinner("Analyzing commits…");
+        let result = analysis::analyze(&repo, &config);
+        sp.finish_and_clear();
+        result?
+    };
 
     println!("Repository: {}", repo.path().display());
     println!("Branch: {}", repo.current_branch()?);

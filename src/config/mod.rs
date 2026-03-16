@@ -77,10 +77,10 @@ impl Config {
             bail!("publish.dist_dir must not be empty");
         }
 
-        if let Some(url) = &self.publish.repository_url {
-            if url.trim().is_empty() {
-                bail!("publish.repository_url must not be empty when provided");
-            }
+        if let Some(url) = &self.publish.repository_url
+            && url.trim().is_empty()
+        {
+            bail!("publish.repository_url must not be empty when provided");
         }
 
         for (field, value) in [
@@ -200,6 +200,8 @@ pub struct PublishConfig {
     #[serde(default)]
     pub trusted_publishing: bool,
     #[serde(default)]
+    pub oidc: bool,
+    #[serde(default)]
     pub username_env: Option<String>,
     #[serde(default)]
     pub password_env: Option<String>,
@@ -216,6 +218,7 @@ impl Default for PublishConfig {
             repository_url: None,
             dist_dir: default_publish_dist_dir(),
             trusted_publishing: false,
+            oidc: false,
             username_env: None,
             password_env: None,
             token_env: None,

@@ -151,7 +151,7 @@ pub fn execute_release_pr(
     )?;
     run_git(
         &clone_path,
-        ["remote", "set-url", "origin", origin_url.as_str().as_ref()],
+        ["remote", "set-url", "origin", origin_url.as_str()],
     )?;
     run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
     run_git(
@@ -217,6 +217,228 @@ pub fn execute_release_pr(
     Ok(())
 }
 
+pub fn execute_monorepo_release_pr(
+    repo: &GitRepository,
+    config: &Config,
+    analysis: &ReleaseAnalysis,
+) -> Result<()> {
+    let selected = analysis.package_plan.selected_packages();
+    if selected.is_empty() {
+        bail!("no releasable packages found in monorepo");
+    }
+
+    if config.monorepo.release_mode == "unified" {
+        execute_monorepo_unified_pr(repo, config, analysis, &selected)?;
+    } else {
+        for package in &selected {
+            let package_analysis = single_package_analysis(analysis, package);
+            execute_monorepo_per_package_pr(repo, config, &package_analysis, package)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn execute_monorepo_unified_pr(
+    repo: &GitRepository,
+    config: &Config,
+    analysis: &ReleaseAnalysis,
+    selected: &[&analysis::PackageReleaseAnalysis],
+) -> Result<()> {
+    let plan = build_release_pr_plan(config, analysis)?;
+    let repo_ref = detect_repo(repo, &config.github)?;
+    let token = env::var(&config.github.token_env)
+        .with_context(|| format!("missing GitHub token in {}", config.github.token_env))?;
+    let client = GitHubClient::new(&config.github.api_base, &token, repo_ref)?;
+
+    let clone_dir = tempdir().context("failed to create temporary workspace")?;
+    let clone_path = clone_dir.path().join("repo");
+    let origin_url = repo
+        .remote_url("origin")?
+        .context("origin remote is required for release PR flow")?;
+
+    run_git(
+        clone_dir.path(),
+        vec![
+            "clone".into(),
+            repo.path().as_os_str().to_owned(),
+            clone_path.as_os_str().to_owned(),
+        ],
+    )?;
+    run_git(
+        &clone_path,
+        ["remote", "set-url", "origin", origin_url.as_str()],
+    )?;
+    run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
+    run_git(
+        &clone_path,
+        [
+            "checkout",
+            "-B",
+            plan.branch.as_str(),
+            format!("origin/{}", plan.base).as_str(),
+        ],
+    )?;
+
+    for package in selected {
+        let next_version = package
+            .next_version
+            .as_ref()
+            .context("selected package has no next version")?;
+        analysis::update_version_files(&clone_path, &package.version_files, next_version)?;
+    }
+    changelog::prepend_release_notes(
+        &clone_path.join(&config.release.changelog_file),
+        &plan.release_notes,
+    )?;
+
+    run_git(&clone_path, ["add", "."])?;
+    let diff = run_git(&clone_path, ["status", "--short"])?;
+    if diff.trim().is_empty() {
+        bail!("release PR would not change any files");
+    }
+
+    run_git(
+        &clone_path,
+        [
+            "-c",
+            "user.name=pyrls",
+            "-c",
+            "user.email=pyrls@users.noreply.github.com",
+            "commit",
+            "-m",
+            plan.title.as_str(),
+        ],
+    )?;
+    run_git(
+        &clone_path,
+        [
+            "push",
+            "--force-with-lease",
+            "origin",
+            format!("HEAD:{}", plan.branch).as_str(),
+        ],
+    )?;
+
+    let pr = match client.find_open_pr(&plan.branch, &plan.base)? {
+        Some(existing) => client.update_pr(existing.number, &plan.title, &plan.body)?,
+        None => client.create_pr(&plan.title, &plan.branch, &plan.base, &plan.body)?,
+    };
+
+    for label in &plan.labels {
+        client.ensure_label(label)?;
+    }
+    client.add_labels(pr.number, &plan.labels)?;
+
+    println!("Release PR ready: #{} {}", pr.number, plan.title);
+    println!("Branch: {}", plan.branch);
+    Ok(())
+}
+
+fn execute_monorepo_per_package_pr(
+    repo: &GitRepository,
+    config: &Config,
+    package_analysis: &ReleaseAnalysis,
+    package: &analysis::PackageReleaseAnalysis,
+) -> Result<()> {
+    let plan = build_release_pr_plan(config, package_analysis)?;
+    let repo_ref = detect_repo(repo, &config.github)?;
+    let token = env::var(&config.github.token_env)
+        .with_context(|| format!("missing GitHub token in {}", config.github.token_env))?;
+    let client = GitHubClient::new(&config.github.api_base, &token, repo_ref)?;
+
+    let clone_dir = tempdir().context("failed to create temporary workspace")?;
+    let clone_path = clone_dir.path().join("repo");
+    let origin_url = repo
+        .remote_url("origin")?
+        .context("origin remote is required for release PR flow")?;
+
+    run_git(
+        clone_dir.path(),
+        vec![
+            "clone".into(),
+            repo.path().as_os_str().to_owned(),
+            clone_path.as_os_str().to_owned(),
+        ],
+    )?;
+    run_git(
+        &clone_path,
+        ["remote", "set-url", "origin", origin_url.as_str()],
+    )?;
+    run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
+    run_git(
+        &clone_path,
+        [
+            "checkout",
+            "-B",
+            plan.branch.as_str(),
+            format!("origin/{}", plan.base).as_str(),
+        ],
+    )?;
+
+    let next_version = package
+        .next_version
+        .as_ref()
+        .context("selected package has no next version")?;
+    analysis::update_version_files(&clone_path, &package.version_files, next_version)?;
+
+    let changelog_path = if package.root == "." {
+        config.release.changelog_file.clone()
+    } else {
+        format!("{}/{}", package.root, config.release.changelog_file)
+    };
+    changelog::prepend_release_notes(&clone_path.join(&changelog_path), &plan.release_notes)?;
+
+    run_git(&clone_path, ["add", "."])?;
+    let diff = run_git(&clone_path, ["status", "--short"])?;
+    if diff.trim().is_empty() {
+        println!(
+            "Skipping {} — release PR would not change any files",
+            package.name
+        );
+        return Ok(());
+    }
+
+    run_git(
+        &clone_path,
+        [
+            "-c",
+            "user.name=pyrls",
+            "-c",
+            "user.email=pyrls@users.noreply.github.com",
+            "commit",
+            "-m",
+            plan.title.as_str(),
+        ],
+    )?;
+    run_git(
+        &clone_path,
+        [
+            "push",
+            "--force-with-lease",
+            "origin",
+            format!("HEAD:{}", plan.branch).as_str(),
+        ],
+    )?;
+
+    let pr = match client.find_open_pr(&plan.branch, &plan.base)? {
+        Some(existing) => client.update_pr(existing.number, &plan.title, &plan.body)?,
+        None => client.create_pr(&plan.title, &plan.branch, &plan.base, &plan.body)?,
+    };
+
+    for label in &plan.labels {
+        client.ensure_label(label)?;
+    }
+    client.add_labels(pr.number, &plan.labels)?;
+
+    println!(
+        "Release PR ready for {}: #{} {}",
+        package.name, pr.number, plan.title
+    );
+    println!("Branch: {}", plan.branch);
+    Ok(())
+}
+
 pub fn execute_release_tag(
     repo: &GitRepository,
     config: &Config,
@@ -256,6 +478,87 @@ pub fn execute_release_tag(
 
     println!("Release tagged: {}", plan.tag_name);
     Ok(())
+}
+
+pub fn execute_monorepo_release_tag(
+    repo: &GitRepository,
+    config: &Config,
+    analysis: &ReleaseAnalysis,
+) -> Result<()> {
+    let selected = analysis.package_plan.selected_packages();
+    if selected.is_empty() {
+        bail!("no releasable packages found in monorepo");
+    }
+
+    let repo_ref = detect_repo(repo, &config.github)?;
+    let token = env::var(&config.github.token_env)
+        .with_context(|| format!("missing GitHub token in {}", config.github.token_env))?;
+    let client = GitHubClient::new(&config.github.api_base, &token, repo_ref)?;
+
+    for package in &selected {
+        let package_analysis = single_package_analysis(analysis, package);
+        let plan = build_release_tag_plan(config, repo, &package_analysis)?;
+
+        run_git(
+            repo.path(),
+            [
+                "tag",
+                "-a",
+                plan.tag_name.as_str(),
+                "-m",
+                plan.title.as_str(),
+            ],
+        )?;
+        run_git(repo.path(), ["push", "origin", plan.tag_name.as_str()])?;
+
+        match client.find_release_by_tag(&plan.tag_name)? {
+            Some(existing) => {
+                client.update_release(existing.id, &plan.title, &plan.release_notes)?;
+            }
+            None => {
+                client.create_release(
+                    &plan.tag_name,
+                    &plan.title,
+                    &plan.release_notes,
+                    &config.release.branch,
+                )?;
+            }
+        }
+
+        println!("Release tagged for {}: {}", package.name, plan.tag_name);
+    }
+
+    Ok(())
+}
+
+fn single_package_analysis(
+    analysis: &ReleaseAnalysis,
+    package: &analysis::PackageReleaseAnalysis,
+) -> ReleaseAnalysis {
+    ReleaseAnalysis {
+        current_version: package.current_version.clone(),
+        next_version: package.next_version.clone(),
+        bump: package.bump,
+        commits: package.commits.clone(),
+        changelog: package.changelog.clone(),
+        package_plan: analysis::PackagePlan {
+            release_mode: "single".to_string(),
+            discovery_source: analysis.package_plan.discovery_source.clone(),
+            packages: vec![analysis::PackageReleaseAnalysis {
+                name: package.name.clone(),
+                root: package.root.clone(),
+                current_version: package.current_version.clone(),
+                next_version: package.next_version.clone(),
+                bump: package.bump,
+                changelog: package.changelog.clone(),
+                version_files: package.version_files.clone(),
+                commits: package.commits.clone(),
+                changed_paths: package.changed_paths.clone(),
+                selected: true,
+                selection_reason: package.selection_reason.clone(),
+            }],
+        },
+    }
 }
 
 pub fn print_release_pr_dry_run(
@@ -430,23 +733,23 @@ pub fn parse_remote_url(value: &str) -> Option<RepoRef> {
 }
 
 #[derive(Debug, Deserialize)]
-struct PullRequest {
-    number: u64,
+pub struct PullRequest {
+    pub number: u64,
 }
 
 #[derive(Debug, Deserialize)]
-struct Release {
-    id: u64,
+pub struct Release {
+    pub id: u64,
 }
 
-struct GitHubClient {
+pub struct GitHubClient {
     api_base: String,
     token: String,
     repo: RepoRef,
 }
 
 impl GitHubClient {
-    fn new(api_base: &str, token: &str, repo: RepoRef) -> Result<Self> {
+    pub fn new(api_base: &str, token: &str, repo: RepoRef) -> Result<Self> {
         Ok(Self {
             api_base: api_base.trim_end_matches('/').to_string(),
             token: token.to_string(),
@@ -454,7 +757,7 @@ impl GitHubClient {
         })
     }
 
-    fn find_open_pr(&self, head_branch: &str, base_branch: &str) -> Result<Option<PullRequest>> {
+    pub fn find_open_pr(&self, head_branch: &str, base_branch: &str) -> Result<Option<PullRequest>> {
         let url = format!(
             "{}/repos/{}/{}/pulls?state=open&head={}:{}&base={}",
             self.api_base,
@@ -468,7 +771,7 @@ impl GitHubClient {
         Ok(prs.into_iter().next())
     }
 
-    fn create_pr(&self, title: &str, head: &str, base: &str, body: &str) -> Result<PullRequest> {
+    pub fn create_pr(&self, title: &str, head: &str, base: &str, body: &str) -> Result<PullRequest> {
         self.post(
             &format!(
                 "{}/repos/{}/{}/pulls",
@@ -478,7 +781,7 @@ impl GitHubClient {
         )
     }
 
-    fn update_pr(&self, number: u64, title: &str, body: &str) -> Result<PullRequest> {
+    pub fn update_pr(&self, number: u64, title: &str, body: &str) -> Result<PullRequest> {
         self.patch(
             &format!(
                 "{}/repos/{}/{}/pulls/{}",
@@ -488,7 +791,7 @@ impl GitHubClient {
         )
     }
 
-    fn ensure_label(&self, name: &str) -> Result<()> {
+    pub fn ensure_label(&self, name: &str) -> Result<()> {
         let url = format!(
             "{}/repos/{}/{}/labels/{}",
             self.api_base, self.repo.owner, self.repo.name, name
@@ -507,7 +810,7 @@ impl GitHubClient {
         Ok(())
     }
 
-    fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
+    pub fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
         let _: serde_json::Value = self.post(
             &format!(
                 "{}/repos/{}/{}/issues/{}/labels",
@@ -518,7 +821,7 @@ impl GitHubClient {
         Ok(())
     }
 
-    fn find_release_by_tag(&self, tag: &str) -> Result<Option<Release>> {
+    pub fn find_release_by_tag(&self, tag: &str) -> Result<Option<Release>> {
         let url = format!(
             "{}/repos/{}/{}/releases/tags/{}",
             self.api_base, self.repo.owner, self.repo.name, tag
@@ -529,7 +832,7 @@ impl GitHubClient {
         }
     }
 
-    fn create_release(&self, tag: &str, name: &str, body: &str, target: &str) -> Result<Release> {
+    pub fn create_release(&self, tag: &str, name: &str, body: &str, target: &str) -> Result<Release> {
         self.post(
             &format!(
                 "{}/repos/{}/{}/releases",
@@ -545,7 +848,7 @@ impl GitHubClient {
         )
     }
 
-    fn update_release(&self, release_id: u64, name: &str, body: &str) -> Result<Release> {
+    pub fn update_release(&self, release_id: u64, name: &str, body: &str) -> Result<Release> {
         self.patch(
             &format!(
                 "{}/repos/{}/{}/releases/{}",
@@ -710,11 +1013,13 @@ mod tests {
                 major: 1,
                 minor: 1,
                 patch: 0,
+                suffix: None,
             },
             next_version: Some(Version {
                 major: 1,
                 minor: 2,
                 patch: 0,
+                suffix: None,
             }),
             bump: BumpLevel::Minor,
             commits: Vec::new(),
@@ -731,11 +1036,13 @@ mod tests {
                         major: 1,
                         minor: 1,
                         patch: 0,
+                        suffix: None,
                     },
                     next_version: Some(Version {
                         major: 1,
                         minor: 2,
                         patch: 0,
+                        suffix: None,
                     }),
                     bump: BumpLevel::Minor,
                     changelog: PendingChangelog {
@@ -760,6 +1067,7 @@ mod tests {
                 major: 1,
                 minor: 1,
                 patch: 0,
+                suffix: None,
             },
             next_version: None,
             bump: BumpLevel::Minor,
@@ -781,11 +1089,13 @@ mod tests {
                             major: 1,
                             minor: 1,
                             patch: 0,
+                            suffix: None,
                         },
                         next_version: Some(Version {
                             major: 1,
                             minor: 2,
                             patch: 0,
+                            suffix: None,
                         }),
                         bump: BumpLevel::Minor,
                         changelog: PendingChangelog {
@@ -804,11 +1114,13 @@ mod tests {
                             major: 0,
                             minor: 5,
                             patch: 0,
+                            suffix: None,
                         },
                         next_version: Some(Version {
                             major: 0,
                             minor: 5,
                             patch: 1,
+                            suffix: None,
                         }),
                         bump: BumpLevel::Patch,
                         changelog: PendingChangelog {

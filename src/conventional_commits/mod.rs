@@ -15,10 +15,10 @@ impl FromStr for ConventionalCommit {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let (head, description) = value
             .split_once(':')
-            .ok_or(ConventionalCommitError::MissingDelimiter)?;
+            .ok_or(ConventionalCommitError::Delimiter)?;
         let description = description.trim();
         if description.is_empty() {
-            return Err(ConventionalCommitError::MissingDescription);
+            return Err(ConventionalCommitError::Description);
         }
 
         let breaking = head.ends_with('!');
@@ -29,7 +29,7 @@ impl FromStr for ConventionalCommit {
             .unwrap_or(head.trim_end_matches('!'))
             .trim();
         if commit_type.is_empty() {
-            return Err(ConventionalCommitError::MissingType);
+            return Err(ConventionalCommitError::Type);
         }
 
         Ok(Self {
@@ -47,7 +47,7 @@ impl ConventionalCommit {
             .next()
             .map(str::trim)
             .filter(|line| !line.is_empty())
-            .ok_or(ConventionalCommitError::MissingDescription)?;
+            .ok_or(ConventionalCommitError::Description)?;
         let mut commit = Self::from_str(subject)?;
 
         for line in lines {
@@ -65,11 +65,11 @@ impl ConventionalCommit {
 #[derive(Debug, Error)]
 pub enum ConventionalCommitError {
     #[error("commit message must contain ':' delimiter")]
-    MissingDelimiter,
+    Delimiter,
     #[error("commit type is missing")]
-    MissingType,
+    Type,
     #[error("commit description is missing")]
-    MissingDescription,
+    Description,
 }
 
 #[cfg(test)]

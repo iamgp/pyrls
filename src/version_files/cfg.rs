@@ -15,12 +15,11 @@ pub fn read_key(path: &Path, key: &str) -> Result<Option<String>> {
             continue;
         }
 
-        if current_section == section {
-            if let Some((candidate, value)) = trimmed.split_once('=') {
-                if candidate.trim() == name {
-                    return Ok(Some(value.trim().to_string()));
-                }
-            }
+        if current_section == section
+            && let Some((candidate, value)) = trimmed.split_once('=')
+            && candidate.trim() == name
+        {
+            return Ok(Some(value.trim().to_string()));
         }
     }
 
@@ -42,14 +41,13 @@ pub fn rewrite_key(path: &Path, key: &str, version: &str) -> Result<()> {
                 return line.to_string();
             }
 
-            if !replaced && current_section == section {
-                if let Some((candidate, _)) = trimmed.split_once('=') {
-                    if candidate.trim() == name {
-                        replaced = true;
-                        let indent = line.chars().take_while(|ch| ch.is_whitespace()).count();
-                        return format!("{}{} = {}", " ".repeat(indent), name, version);
-                    }
-                }
+            if !replaced && current_section == section
+                && let Some((candidate, _)) = trimmed.split_once('=')
+                && candidate.trim() == name
+            {
+                replaced = true;
+                let indent = line.chars().take_while(|ch| ch.is_whitespace()).count();
+                return format!("{}{} = {}", " ".repeat(indent), name, version);
             }
 
             line.to_string()

@@ -11,7 +11,7 @@ use crate::{
     cli::Cli,
     config::{ChangelogConfig, Config, GitHubConfig, VersionFileConfig},
     git::GitRepository,
-    github,
+    github, progress,
 };
 
 pub fn run(cli: &Cli) -> Result<()> {
@@ -24,7 +24,15 @@ pub fn run(cli: &Cli) -> Result<()> {
         .as_ref()
         .map(|repo| repo.path())
         .unwrap_or(Path::new("."));
-    let config = build_config(repo.as_ref(), repo_root);
+
+    let config = if cli.dry_run {
+        build_config(repo.as_ref(), repo_root)
+    } else {
+        let sp = progress::spinner("Detecting project layout…");
+        let result = build_config(repo.as_ref(), repo_root);
+        sp.finish_and_clear();
+        result
+    };
     let rendered = toml::to_string_pretty(&config).context("failed to render config")?;
 
     if cli.dry_run {
@@ -51,11 +59,11 @@ fn build_config(repo: Option<&GitRepository>, repo_root: &Path) -> Config {
         detect_initial_version(repo_root, &version_files).unwrap_or_else(|| "0.1.0".to_string());
     let mut github_config = GitHubConfig::default();
 
-    if let Some(repo) = repo {
-        if let Ok(repo_ref) = github::detect_repo(repo, &github_config) {
-            github_config.owner = Some(repo_ref.owner);
-            github_config.repo = Some(repo_ref.name);
-        }
+    if let Some(repo) = repo
+        && let Ok(repo_ref) = github::detect_repo(repo, &github_config)
+    {
+        github_config.owner = Some(repo_ref.owner);
+        github_config.repo = Some(repo_ref.name);
     }
 
     Config {

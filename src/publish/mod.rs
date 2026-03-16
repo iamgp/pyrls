@@ -7,8 +7,12 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, PublishConfig};
+use crate::{
+    analysis::ReleaseAnalysis,
+    config::{Config, PublishConfig},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishPlan {
@@ -49,8 +53,56 @@ pub fn execute(repo_root: &Path, config: &Config) -> Result<()> {
     Ok(())
 }
 
+pub fn execute_monorepo(
+    repo_root: &Path,
+    config: &Config,
+    analysis: &ReleaseAnalysis,
+) -> Result<()> {
+    let selected = analysis.package_plan.selected_packages();
+    if selected.is_empty() {
+        bail!("no releasable packages found in monorepo");
+    }
+
+    for package in &selected {
+        let package_root = repo_root.join(&package.root);
+        let plan = build_plan(&package_root, &config.publish)?;
+        let mut command = command_from_plan(&plan);
+        let status = command
+            .current_dir(&package_root)
+            .status()
+            .with_context(|| {
+                format!(
+                    "failed to launch {} publish command for {}",
+                    plan.provider, package.name
+                )
+            })?;
+
+        if !status.success() {
+            bail!(
+                "{} publish failed for {} with status {}",
+                plan.provider,
+                package.name,
+                status
+                    .code()
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
+        }
+
+        println!(
+            "Published {} ({} artifact(s)) with {} to {}",
+            package.name,
+            plan.dist_files.len(),
+            plan.provider,
+            plan.target_label()
+        );
+    }
+
+    Ok(())
+}
+
 pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {
-    let plan = build_plan(repo_root, &config.publish)?;
+    let plan = build_plan_dry_run(repo_root, &config.publish)?;
 
     println!("Publish is enabled: {}", config.publish.enabled);
     println!("Provider: {}", plan.provider);
@@ -61,6 +113,11 @@ pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {
     }
     if plan.trusted_publishing {
         println!("Trusted publishing: enabled");
+        if oidc_env_available() {
+            println!("OIDC: Would exchange OIDC token with PyPI");
+        } else {
+            println!("OIDC: GitHub Actions OIDC env vars not detected");
+        }
     }
     if !plan.env.is_empty() {
         println!("Environment:");
@@ -74,6 +131,18 @@ pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {
 }
 
 pub fn build_plan(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPlan> {
+    build_plan_inner(repo_root, publish, false)
+}
+
+fn build_plan_dry_run(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPlan> {
+    build_plan_inner(repo_root, publish, true)
+}
+
+fn build_plan_inner(
+    repo_root: &Path,
+    publish: &PublishConfig,
+    dry_run: bool,
+) -> Result<PublishPlan> {
     if !publish.enabled {
         bail!("publish flow is disabled; set [publish].enabled = true to use release publish");
     }
@@ -89,7 +158,18 @@ pub fn build_plan(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPl
         .map(str::to_string);
 
     let mut command = Vec::new();
-    let mut env = Vec::new();
+    let mut env_pairs = Vec::new();
+
+    let use_oidc = publish.oidc
+        && !dry_run
+        && publish.token_env.is_none()
+        && oidc_env_available();
+
+    let oidc_token = if use_oidc {
+        Some(exchange_oidc_token()?)
+    } else {
+        None
+    };
 
     match provider {
         "uv" => {
@@ -102,10 +182,15 @@ pub fn build_plan(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPl
             }
 
             if let Some(url) = &repository_url {
-                env.push(("UV_PUBLISH_URL".to_string(), url.clone()));
+                env_pairs.push(("UV_PUBLISH_URL".to_string(), url.clone()));
             }
 
-            append_auth_envs(publish, &mut env, "UV_PUBLISH_")?;
+            if let Some(token) = &oidc_token {
+                command.push("--token".into());
+                command.push(token.into());
+            } else {
+                append_auth_envs(publish, &mut env_pairs, "UV_PUBLISH_")?;
+            }
             command.extend(dist_files.iter().map(|path| path.as_os_str().to_owned()));
         }
         "twine" => {
@@ -121,11 +206,18 @@ pub fn build_plan(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPl
                 command.push(repository.into());
             }
 
-            append_auth_envs(publish, &mut env, "TWINE_")?;
+            if let Some(token) = &oidc_token {
+                env_pairs.push(("TWINE_USERNAME".to_string(), "__token__".to_string()));
+                env_pairs.push(("TWINE_PASSWORD".to_string(), token.clone()));
+            } else {
+                append_auth_envs(publish, &mut env_pairs, "TWINE_")?;
+            }
             command.extend(dist_files.iter().map(|path| path.as_os_str().to_owned()));
         }
         _ => bail!("unsupported publish provider `{provider}`"),
     }
+
+    let trusted_publishing = publish.trusted_publishing || (publish.oidc && oidc_env_available());
 
     Ok(PublishPlan {
         provider: provider.to_string(),
@@ -133,8 +225,8 @@ pub fn build_plan(repo_root: &Path, publish: &PublishConfig) -> Result<PublishPl
         repository_url,
         dist_files,
         command,
-        env,
-        trusted_publishing: publish.trusted_publishing,
+        env: env_pairs,
+        trusted_publishing,
     })
 }
 
@@ -145,6 +237,51 @@ impl PublishPlan {
             None => self.repository.clone(),
         }
     }
+}
+
+const PYPI_OIDC_MINT_URL: &str = "https://pypi.org/_/oidc/mint-token";
+
+fn oidc_env_available() -> bool {
+    env::var("ACTIONS_ID_TOKEN_REQUEST_URL").is_ok()
+        && env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").is_ok()
+}
+
+#[derive(Serialize)]
+struct OidcMintRequest {
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct OidcMintResponse {
+    token: String,
+}
+
+fn exchange_oidc_token() -> Result<String> {
+    let request_url =
+        env::var("ACTIONS_ID_TOKEN_REQUEST_URL").context("ACTIONS_ID_TOKEN_REQUEST_URL not set")?;
+    let request_token = env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+        .context("ACTIONS_ID_TOKEN_REQUEST_TOKEN not set")?;
+
+    let url = format!("{request_url}&audience=pypi");
+    let gh_response: serde_json::Value = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {request_token}"))
+        .call()
+        .context("failed to request OIDC token from GitHub")?
+        .into_json()
+        .context("failed to parse GitHub OIDC token response")?;
+
+    let oidc_token = gh_response["value"]
+        .as_str()
+        .context("GitHub OIDC response missing 'value' field")?
+        .to_string();
+
+    let mint_response: OidcMintResponse = ureq::post(PYPI_OIDC_MINT_URL)
+        .send_json(&OidcMintRequest { token: oidc_token })
+        .context("failed to exchange OIDC token with PyPI")?
+        .into_json()
+        .context("failed to parse PyPI OIDC mint response")?;
+
+    Ok(mint_response.token)
 }
 
 fn collect_dist_files(repo_root: &Path, dist_dir: &str) -> Result<Vec<PathBuf>> {
@@ -208,7 +345,7 @@ fn command_from_plan(plan: &PublishPlan) -> Command {
 
 fn render_command(args: &[OsString]) -> String {
     args.iter()
-        .map(|arg| shell_escape(arg))
+        .map(shell_escape)
         .collect::<Vec<_>>()
         .join(" ")
 }

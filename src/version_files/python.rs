@@ -52,7 +52,7 @@ fn pattern_parts(pattern: &str) -> Result<(&str, &str)> {
         .ok_or_else(|| anyhow::anyhow!("pattern must contain {{version}} placeholder"))
 }
 
-fn extract_version<'a>(line: &'a str, prefix: &str, suffix: &str) -> Option<String> {
+fn extract_version(line: &str, prefix: &str, suffix: &str) -> Option<String> {
     let trimmed = line.trim();
     let rest = trimmed.strip_prefix(prefix)?;
     let version = rest.strip_suffix(suffix)?;

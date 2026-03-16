@@ -1,0 +1,18 @@
+[release]
+branch = "main"
+tag_prefix = "v"
+changelog_file = "CHANGELOG.md"
+
+[versioning]
+strategy = "conventional_commits"
+
+[[version_files]]
+path = "Cargo.toml"
+key = "package.version"
+
+[publish]
+enabled = false
+
+[github]
+owner = "gareth"
+repo = "pyrls"

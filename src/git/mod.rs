@@ -36,10 +36,10 @@ impl GitRepository {
     }
 
     pub fn current_branch(&self) -> Result<String> {
-        if let Ok(branch) = run_git(self.path(), ["branch", "--show-current"]) {
-            if !branch.trim().is_empty() {
-                return Ok(branch);
-            }
+        if let Ok(branch) = run_git(self.path(), ["branch", "--show-current"])
+            && !branch.trim().is_empty()
+        {
+            return Ok(branch);
         }
 
         let head = self.inner.head().context("failed to read HEAD")?;
@@ -47,10 +47,10 @@ impl GitRepository {
             return Ok(name.to_string());
         }
 
-        if let Some(name) = head.name() {
-            if let Some(branch) = name.strip_prefix("refs/heads/") {
-                return Ok(branch.to_string());
-            }
+        if let Some(name) = head.name()
+            && let Some(branch) = name.strip_prefix("refs/heads/")
+        {
+            return Ok(branch.to_string());
         }
 
         Ok("HEAD".to_string())
