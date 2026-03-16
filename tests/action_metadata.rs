@@ -7,11 +7,11 @@ fn action_exposes_command_input_and_downloads_binary() {
 
     assert!(action.contains("command:"), "{action}");
     assert!(action.contains("release pr"), "{action}");
-    assert!(action.contains("release publish"), "{action}");
+    assert!(action.contains("release tag"), "{action}");
     assert!(action.contains("releases/latest/download"), "{action}");
     assert!(action.contains("github.action_repository"), "{action}");
     assert!(
-        action.contains("\"$temp_dir/pyrls\" ${{ inputs.command }}"),
+        action.contains("pyrls ${{ inputs.command }}"),
         "{action}"
     );
 }
