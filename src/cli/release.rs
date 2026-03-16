@@ -2,11 +2,12 @@ use anyhow::{Context, Result};
 
 use crate::{
     analysis,
+    changelog::PendingChangelog,
     cli::{Cli, PreReleaseArgs, PreReleaseKind, ReleaseCommand, ReleaseSubcommand},
     config::Config,
     git::GitRepository,
     github, progress, publish,
-    version::Version,
+    version::{BumpLevel, Version},
 };
 
 fn apply_suffix_bump(version: &Version, kind: &PreReleaseKind) -> Result<Version> {
@@ -50,6 +51,57 @@ fn apply_pre_release_override(
     Ok(())
 }
 
+/// When `release tag` runs after a release PR has been merged, the version
+/// files already contain the bumped version (e.g. 0.2.0) and the latest tag
+/// is still the old one (e.g. v0.1.0).  A naive re-analysis would scan the
+/// commits since v0.1.0 — which now include the merge commit — and bump
+/// *again* to 0.3.0.
+///
+/// This function detects that situation: the current version in the version
+/// files is already newer than the latest tag, so we should tag the current
+/// version rather than computing a new bump.
+fn adjust_for_merged_release_pr(
+    repo: &GitRepository,
+    config: &Config,
+    analysis: &mut analysis::ReleaseAnalysis,
+) -> Result<()> {
+    let tag_prefix = &config.release.tag_prefix;
+    let latest_tag_version = repo
+        .latest_tag()?
+        .and_then(|tag| tag.strip_prefix(tag_prefix).map(|s| s.to_string()))
+        .and_then(|s| s.parse::<Version>().ok());
+
+    let Some(tag_version) = latest_tag_version else {
+        return Ok(());
+    };
+
+    // If current version (from files) is already ahead of the latest tag,
+    // the release PR has been merged — tag the current version as-is.
+    if analysis.current_version > tag_version {
+        let version = analysis.current_version.clone();
+        analysis.next_version = Some(version.clone());
+        analysis.bump = BumpLevel::None;
+        analysis.changelog = PendingChangelog::from_commits(
+            config,
+            &analysis
+                .commits
+                .iter()
+                .filter_map(|c| {
+                    crate::conventional_commits::ConventionalCommit::parse_message(&c.message).ok()
+                })
+                .collect::<Vec<_>>(),
+        );
+        for package in &mut analysis.package_plan.packages {
+            if package.selected {
+                package.next_version = Some(version.clone());
+                package.bump = BumpLevel::None;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
     let repo = GitRepository::discover(".").context("failed to inspect git repository")?;
     let config = Config::load(&cli.config)?;
@@ -81,6 +133,7 @@ pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
             }
         }
         ReleaseSubcommand::Tag(args) => {
+            adjust_for_merged_release_pr(&repo, &config, &mut analysis)?;
             apply_pre_release_override(&mut analysis, args)?;
             if cli.dry_run {
                 github::print_release_tag_dry_run(&repo, &config, &analysis)?;
