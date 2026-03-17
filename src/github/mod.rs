@@ -12,6 +12,14 @@ use crate::{
     git::{GitRepository, run_git},
 };
 
+fn authenticated_url(origin_url: &str, token: &str) -> String {
+    if let Some(rest) = origin_url.strip_prefix("https://") {
+        format!("https://x-access-token:{token}@{rest}")
+    } else {
+        origin_url.to_string()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRef {
     pub owner: String,
@@ -149,9 +157,10 @@ pub fn execute_release_pr(
             clone_path.as_os_str().to_owned(),
         ],
     )?;
+    let auth_url = authenticated_url(&origin_url, &token);
     run_git(
         &clone_path,
-        ["remote", "set-url", "origin", origin_url.as_str()],
+        ["remote", "set-url", "origin", auth_url.as_str()],
     )?;
     run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
     run_git(
@@ -265,9 +274,10 @@ fn execute_monorepo_unified_pr(
             clone_path.as_os_str().to_owned(),
         ],
     )?;
+    let auth_url = authenticated_url(&origin_url, &token);
     run_git(
         &clone_path,
-        ["remote", "set-url", "origin", origin_url.as_str()],
+        ["remote", "set-url", "origin", auth_url.as_str()],
     )?;
     run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
     run_git(
@@ -361,9 +371,10 @@ fn execute_monorepo_per_package_pr(
             clone_path.as_os_str().to_owned(),
         ],
     )?;
+    let auth_url = authenticated_url(&origin_url, &token);
     run_git(
         &clone_path,
-        ["remote", "set-url", "origin", origin_url.as_str()],
+        ["remote", "set-url", "origin", auth_url.as_str()],
     )?;
     run_git(&clone_path, ["fetch", "origin", plan.base.as_str()])?;
     run_git(
