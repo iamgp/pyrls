@@ -14,5 +14,5 @@ key = "package.version"
 enabled = false
 
 [github]
-owner = "gareth"
+owner = "iamgp"
 repo = "pyrls"
