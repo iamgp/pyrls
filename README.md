@@ -2,6 +2,8 @@
 
 Automated Python release tooling for Git repositories — a single binary that handles version bumps, changelogs, release PRs, GitHub Releases, and PyPI publishing.
 
+Full documentation lives under [`docs/`](./docs/README.md).
+
 <!-- badges -->
 <!-- ![CI](https://github.com/OWNER/pyrls/actions/workflows/ci.yml/badge.svg) -->
 <!-- ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg) -->
