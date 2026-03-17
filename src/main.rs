@@ -4,6 +4,7 @@ mod channels;
 mod cli;
 mod config;
 mod conventional_commits;
+mod cratesio;
 mod ecosystem;
 mod git;
 mod github;

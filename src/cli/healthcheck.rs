@@ -6,7 +6,7 @@ use console::style;
 use crate::{
     analysis::{detect_project_name, read_current_version},
     config::{Config, Ecosystem},
-    ecosystem,
+    cratesio, ecosystem,
     git::{GitRepository, run_git},
     github, pypi,
     version::Version,
@@ -444,15 +444,10 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
     };
     let ecosystem = ecosystem::detect(Path::new("."), Some(config));
 
-    if ecosystem != Ecosystem::Python {
-        checks.push(CheckResult::Pass(format!(
-            "{} ecosystem detected, skipping PyPI checks",
-            match ecosystem {
-                Ecosystem::Python => "python",
-                Ecosystem::Rust => "rust",
-                Ecosystem::Go => "go",
-            }
-        )));
+    if ecosystem == Ecosystem::Go {
+        checks.push(CheckResult::Pass(
+            "go ecosystem detected, skipping package registry checks".to_string(),
+        ));
         return checks;
     }
 
@@ -486,18 +481,34 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
                 if let (Some(version), Some(project_name)) =
                     (parsed, detect_project_name(repo.path(), "."))
                 {
-                    match pypi::has_version(&project_name, &version) {
-                        Ok(true) => checks.push(CheckResult::Fail(format!(
-                            "Version {} is already published on PyPI",
-                            version
-                        ))),
-                        Ok(false) => checks.push(CheckResult::Pass(format!(
-                            "Version {} is not yet published on PyPI",
-                            version
-                        ))),
-                        Err(_) => checks.push(CheckResult::Warn(
-                            "Could not query PyPI for current version".to_string(),
-                        )),
+                    match ecosystem {
+                        Ecosystem::Python => match pypi::has_version(&project_name, &version) {
+                            Ok(true) => checks.push(CheckResult::Fail(format!(
+                                "Version {} is already published on PyPI",
+                                version
+                            ))),
+                            Ok(false) => checks.push(CheckResult::Pass(format!(
+                                "Version {} is not yet published on PyPI",
+                                version
+                            ))),
+                            Err(_) => checks.push(CheckResult::Warn(
+                                "Could not query PyPI for current version".to_string(),
+                            )),
+                        },
+                        Ecosystem::Rust => match cratesio::has_version(&project_name, &version) {
+                            Ok(true) => checks.push(CheckResult::Fail(format!(
+                                "Version {} is already published on crates.io",
+                                version
+                            ))),
+                            Ok(false) => checks.push(CheckResult::Pass(format!(
+                                "Version {} is not yet published on crates.io",
+                                version
+                            ))),
+                            Err(_) => checks.push(CheckResult::Warn(
+                                "Could not query crates.io for current version".to_string(),
+                            )),
+                        },
+                        Ecosystem::Go => {}
                     }
                 }
             }
@@ -515,33 +526,57 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
         }
     }
 
-    let has_credentials = config.publish.oidc
-        || config.publish.trusted_publishing
-        || config.publish.token_env.is_some()
-        || config.publish.username_env.is_some();
+    match ecosystem {
+        Ecosystem::Python => {
+            let has_credentials = config.publish.oidc
+                || config.publish.trusted_publishing
+                || config.publish.token_env.is_some()
+                || config.publish.username_env.is_some();
 
-    if has_credentials {
-        checks.push(CheckResult::Pass(
-            "PyPI credentials or OIDC configured".to_string(),
-        ));
-    } else {
-        checks.push(CheckResult::Warn(
-            "No PyPI credentials or OIDC configured".to_string(),
-        ));
-    }
+            if has_credentials {
+                checks.push(CheckResult::Pass(
+                    "PyPI credentials or OIDC configured".to_string(),
+                ));
+            } else {
+                checks.push(CheckResult::Warn(
+                    "No PyPI credentials or OIDC configured".to_string(),
+                ));
+            }
 
-    if config.publish.oidc || config.publish.trusted_publishing {
-        if env::var("ACTIONS_ID_TOKEN_REQUEST_URL").is_ok()
-            && env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").is_ok()
-        {
-            checks.push(CheckResult::Pass(
-                "OIDC environment is available".to_string(),
-            ));
-        } else {
-            checks.push(CheckResult::Warn(
-                "OIDC trusted publisher could not be validated outside GitHub Actions".to_string(),
-            ));
+            if config.publish.oidc || config.publish.trusted_publishing {
+                if env::var("ACTIONS_ID_TOKEN_REQUEST_URL").is_ok()
+                    && env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").is_ok()
+                {
+                    checks.push(CheckResult::Pass(
+                        "OIDC environment is available".to_string(),
+                    ));
+                } else {
+                    checks.push(CheckResult::Warn(
+                        "OIDC trusted publisher could not be validated outside GitHub Actions"
+                            .to_string(),
+                    ));
+                }
+            }
         }
+        Ecosystem::Rust => {
+            let token_env = config
+                .publish
+                .token_env
+                .as_deref()
+                .unwrap_or("CARGO_REGISTRY_TOKEN");
+            if env::var(token_env).is_ok() {
+                checks.push(CheckResult::Pass(format!(
+                    "{} is set for crates.io publishing",
+                    token_env
+                )));
+            } else {
+                checks.push(CheckResult::Warn(format!(
+                    "{} is not set for crates.io publishing",
+                    token_env
+                )));
+            }
+        }
+        Ecosystem::Go => {}
     }
 
     checks
