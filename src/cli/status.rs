@@ -98,7 +98,7 @@ fn print_legacy(
     );
     println!(
         "Current version: {}",
-        display_version(&config, &analysis.current_version)
+        display_version(config, &analysis.current_version)
     );
     println!("Commit count: {}", analysis.commits.len());
     println!("Proposed bump: {}", analysis.bump.as_str());
@@ -107,7 +107,7 @@ fn print_legacy(
         analysis
             .next_version
             .as_ref()
-            .map(|version| display_version(&config, version))
+            .map(|version| display_version(config, version))
             .unwrap_or_else(|| "unchanged".to_string())
     );
     println!("Release mode: {}", analysis.package_plan.release_mode);
@@ -130,7 +130,7 @@ fn print_legacy(
             package
                 .next_version
                 .as_ref()
-                .map(|version| display_version(&config, version))
+                .map(|version| display_version(config, version))
                 .unwrap_or_else(|| "unchanged".to_string()),
             package.bump.as_str(),
             package.selection_reason
