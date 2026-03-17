@@ -1,3 +1,4 @@
+pub mod healthcheck;
 pub mod init;
 pub mod release;
 pub mod status;
@@ -32,7 +33,14 @@ pub enum Command {
     Init,
     Status(StatusArgs),
     Validate,
+    Healthcheck(HealthcheckArgs),
     Release(ReleaseCommand),
+}
+
+#[derive(Debug, Args)]
+pub struct HealthcheckArgs {
+    #[arg(long, value_name = "CATEGORY")]
+    pub only: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -94,6 +102,7 @@ pub fn run() -> Result<()> {
         Command::Init => init::run(&cli),
         Command::Status(args) => status::run(&cli, args),
         Command::Validate => validate::run(&cli),
+        Command::Healthcheck(args) => healthcheck::run(&cli, args),
         Command::Release(cmd) => release::run(&cli, cmd),
     }
 }
