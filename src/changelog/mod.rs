@@ -1,13 +1,31 @@
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use anyhow::{Context, Result};
 
-use crate::{config::Config, conventional_commits::ConventionalCommit};
+use crate::{
+    config::{ChangelogConfig, Config},
+    conventional_commits::ConventionalCommit,
+    git::CommitSummary,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContributorInfo {
+    pub name: String,
+    pub commit_count: usize,
+    pub first_contribution: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingChangelog {
     pub sections: BTreeMap<String, Vec<String>>,
+    pub contributors: Vec<ContributorInfo>,
 }
+
+const DEFAULT_BOT_PATTERNS: &[&str] = &["dependabot", "renovate", "github-actions", "[bot]"];
 
 impl PendingChangelog {
     pub fn from_commits(config: &Config, commits: &[ConventionalCommit]) -> Self {
@@ -31,7 +49,47 @@ impl PendingChangelog {
                 .push(commit.description.clone());
         }
 
-        Self { sections }
+        Self {
+            sections,
+            contributors: Vec::new(),
+        }
+    }
+
+    pub fn add_contributors(
+        &mut self,
+        commits: &[CommitSummary],
+        known_authors: &BTreeSet<String>,
+        changelog_config: &ChangelogConfig,
+    ) {
+        let bot_patterns: Vec<String> = if changelog_config.bot_patterns.is_empty() {
+            DEFAULT_BOT_PATTERNS.iter().map(|s| s.to_string()).collect()
+        } else {
+            changelog_config.bot_patterns.clone()
+        };
+
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for commit in commits {
+            *counts.entry(commit.author.clone()).or_insert(0) += 1;
+        }
+
+        let mut contributors = Vec::new();
+        for (name, commit_count) in &counts {
+            if changelog_config.exclude_bots {
+                let lower = name.to_lowercase();
+                if bot_patterns.iter().any(|p| lower.contains(&p.to_lowercase())) {
+                    continue;
+                }
+            }
+
+            contributors.push(ContributorInfo {
+                name: name.clone(),
+                commit_count: *commit_count,
+                first_contribution: !known_authors.contains(name),
+            });
+        }
+
+        contributors.sort_by(|a, b| b.commit_count.cmp(&a.commit_count).then(a.name.cmp(&b.name)));
+        self.contributors = contributors;
     }
 
     pub fn is_empty(&self) -> bool {
@@ -43,7 +101,12 @@ pub fn next_release_heading(version: &str, date: &str) -> String {
     format!("## [{version}] - {date}")
 }
 
-pub fn render_release_notes(version: &str, date: &str, changelog: &PendingChangelog) -> String {
+pub fn render_release_notes(
+    version: &str,
+    date: &str,
+    changelog: &PendingChangelog,
+    first_contribution_emoji: &str,
+) -> String {
     let mut output = String::new();
     output.push_str(&next_release_heading(version, date));
     output.push('\n');
@@ -53,6 +116,30 @@ pub fn render_release_notes(version: &str, date: &str, changelog: &PendingChange
         output.push_str(&format!("### {section}\n"));
         for entry in entries {
             output.push_str(&format!("- {entry}\n"));
+        }
+    }
+
+    if !changelog.contributors.is_empty() {
+        output.push_str("\n### Contributors\n");
+        output.push_str("Thanks to our contributors for this release:\n");
+        for contributor in &changelog.contributors {
+            if contributor.first_contribution {
+                output.push_str(&format!(
+                    "- {} @{} — first contribution!\n",
+                    first_contribution_emoji, contributor.name
+                ));
+            } else {
+                output.push_str(&format!(
+                    "- @{} ({} {})\n",
+                    contributor.name,
+                    contributor.commit_count,
+                    if contributor.commit_count == 1 {
+                        "commit"
+                    } else {
+                        "commits"
+                    }
+                ));
+            }
         }
     }
 
@@ -136,9 +223,10 @@ mod tests {
     fn renders_release_notes() {
         let changelog = PendingChangelog {
             sections: BTreeMap::from([("Added".to_string(), vec!["ship it".to_string()])]),
+            contributors: Vec::new(),
         };
 
-        let notes = render_release_notes("1.2.0", "2026-03-16", &changelog);
+        let notes = render_release_notes("1.2.0", "2026-03-16", &changelog, "🎉");
         assert!(notes.contains("## [1.2.0] - 2026-03-16"));
         assert!(notes.contains("### Added"));
         assert!(notes.contains("- ship it"));

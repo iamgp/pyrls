@@ -184,10 +184,30 @@ pub struct VersionFileConfig {
     pub pattern: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangelogConfig {
     #[serde(default)]
     pub sections: BTreeMap<String, toml::Value>,
+    #[serde(default = "default_contributors_enabled")]
+    pub contributors: bool,
+    #[serde(default = "default_first_contribution_emoji")]
+    pub first_contribution_emoji: String,
+    #[serde(default = "default_exclude_bots")]
+    pub exclude_bots: bool,
+    #[serde(default)]
+    pub bot_patterns: Vec<String>,
+}
+
+impl Default for ChangelogConfig {
+    fn default() -> Self {
+        Self {
+            sections: BTreeMap::new(),
+            contributors: default_contributors_enabled(),
+            first_contribution_emoji: default_first_contribution_emoji(),
+            exclude_bots: default_exclude_bots(),
+            bot_patterns: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,6 +364,18 @@ fn default_tagged_label() -> String {
 pub struct WorkspaceConfig {
     #[serde(default)]
     pub cascade_bumps: bool,
+}
+
+fn default_contributors_enabled() -> bool {
+    true
+}
+
+fn default_first_contribution_emoji() -> String {
+    "🎉".to_string()
+}
+
+fn default_exclude_bots() -> bool {
+    true
 }
 
 fn default_section_for_commit_type(commit_type: &str) -> &'static str {

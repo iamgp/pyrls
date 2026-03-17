@@ -92,7 +92,10 @@ fn default_changelog_config() -> ChangelogConfig {
         ("perf".to_string(), Value::String("Changed".to_string())),
         ("refactor".to_string(), Value::String("Changed".to_string())),
     ]);
-    ChangelogConfig { sections }
+    ChangelogConfig {
+        sections,
+        ..Default::default()
+    }
 }
 
 fn detect_version_files(repo_root: &Path) -> Vec<VersionFileConfig> {

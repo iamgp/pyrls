@@ -12,6 +12,7 @@ pub struct CommitSummary {
     pub id: String,
     pub message: String,
     pub changed_paths: Vec<String>,
+    pub author: String,
 }
 
 pub struct GitRepository {
@@ -98,6 +99,11 @@ impl GitRepository {
                 id: oid.to_string(),
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
+                author: commit
+                    .author()
+                    .name()
+                    .unwrap_or("unknown")
+                    .to_string(),
             });
         }
 
@@ -128,11 +134,41 @@ impl GitRepository {
                 id: oid.to_string(),
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
+                author: commit
+                    .author()
+                    .name()
+                    .unwrap_or("unknown")
+                    .to_string(),
             });
         }
 
         commits.reverse();
         Ok(commits)
+    }
+
+    pub fn authors_before_latest_tag(&self) -> Result<Vec<String>> {
+        let tag_commit = self
+            .latest_tag()?
+            .and_then(|tag| self.inner.revparse_single(&tag).ok())
+            .and_then(|object| object.peel_to_commit().ok());
+
+        let Some(tag_commit) = tag_commit else {
+            return Ok(Vec::new());
+        };
+
+        let mut revwalk = self.inner.revwalk().context("failed to create revwalk")?;
+        revwalk.push(tag_commit.id())?;
+
+        let mut authors = std::collections::BTreeSet::new();
+        for oid in revwalk {
+            let oid = oid?;
+            let commit = self.inner.find_commit(oid)?;
+            if let Some(name) = commit.author().name() {
+                authors.insert(name.to_string());
+            }
+        }
+
+        Ok(authors.into_iter().collect())
     }
 
     pub fn remote_url(&self, name: &str) -> Result<Option<String>> {

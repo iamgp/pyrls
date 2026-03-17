@@ -68,7 +68,12 @@ pub fn build_release_pr_plan(config: &Config, analysis: &ReleaseAnalysis) -> Res
         release_branch_suffix(analysis)?
     );
     let date = today_utc();
-    let release_notes = changelog::render_release_notes(&release_label, &date, &analysis.changelog);
+    let release_notes = changelog::render_release_notes(
+        &release_label,
+        &date,
+        &analysis.changelog,
+        &config.changelog.first_contribution_emoji,
+    );
     let body = format!(
         "## Release summary\n\n{release_notes}\n\n## Maintainer checklist\n- [ ] Review version bump\n- [ ] Review changelog\n- [ ] Merge to cut the release"
     );
@@ -117,6 +122,7 @@ pub fn build_release_tag_plan(
             &tag_name,
             &today_utc(),
             &analysis.changelog,
+            &config.changelog.first_contribution_emoji,
         ),
         tag_name,
         label: config.github.tagged_label.clone(),
@@ -1057,6 +1063,7 @@ mod tests {
             commits: Vec::new(),
             changelog: PendingChangelog {
                 sections: BTreeMap::from([("Added".to_string(), vec!["search".to_string()])]),
+                contributors: Vec::new(),
             },
             package_plan: PackagePlan {
                 release_mode: "single".to_string(),
@@ -1082,6 +1089,7 @@ mod tests {
                             "Added".to_string(),
                             vec!["search".to_string()],
                         )]),
+                        contributors: Vec::new(),
                     },
                     version_files: Vec::new(),
                     commits: Vec::new(),
@@ -1109,6 +1117,7 @@ mod tests {
                     "Added".to_string(),
                     vec!["core: search".to_string(), "cli: status".to_string()],
                 )]),
+                contributors: Vec::new(),
             },
             package_plan: PackagePlan {
                 release_mode: "unified".to_string(),
@@ -1132,6 +1141,7 @@ mod tests {
                         bump: BumpLevel::Minor,
                         changelog: PendingChangelog {
                             sections: BTreeMap::new(),
+                            contributors: Vec::new(),
                         },
                         version_files: Vec::new(),
                         commits: Vec::new(),
@@ -1157,6 +1167,7 @@ mod tests {
                         bump: BumpLevel::Patch,
                         changelog: PendingChangelog {
                             sections: BTreeMap::new(),
+                            contributors: Vec::new(),
                         },
                         version_files: Vec::new(),
                         commits: Vec::new(),

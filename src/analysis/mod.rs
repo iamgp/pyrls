@@ -101,7 +101,15 @@ fn analyze_single_package(
         .collect::<Vec<_>>();
     let bump = BumpLevel::from_commits(&conventional_commits);
     let next_version = bump.apply(&current_version);
-    let changelog = PendingChangelog::from_commits(config, &conventional_commits);
+    let mut changelog = PendingChangelog::from_commits(config, &conventional_commits);
+
+    if config.changelog.contributors {
+        let known_authors: std::collections::BTreeSet<String> = repo
+            .authors_before_latest_tag()?
+            .into_iter()
+            .collect();
+        changelog.add_contributors(&commits, &known_authors, &config.changelog);
+    }
 
     Ok(ReleaseAnalysis {
         current_version: current_version.clone(),
@@ -155,13 +163,22 @@ fn analyze_monorepo(
         let next_version = bump.apply(&current_version);
         let selected = !changed_paths.is_empty() && next_version.is_some();
 
+        let mut changelog = PendingChangelog::from_commits(config, &conventional_commits);
+        if config.changelog.contributors {
+            let known_authors: std::collections::BTreeSet<String> = repo
+                .authors_before_latest_tag()?
+                .into_iter()
+                .collect();
+            changelog.add_contributors(&package_commits, &known_authors, &config.changelog);
+        }
+
         packages.push(PackageReleaseAnalysis {
             name: definition.name,
             root: definition.root.clone(),
             current_version,
             next_version,
             bump,
-            changelog: PendingChangelog::from_commits(config, &conventional_commits),
+            changelog,
             version_files: definition.version_files,
             commits: package_commits,
             changed_paths,
@@ -619,6 +636,8 @@ fn path_in_package(path: &str, package_root: &str) -> bool {
 
 fn aggregate_changelog(packages: &[PackageReleaseAnalysis]) -> PendingChangelog {
     let mut sections = std::collections::BTreeMap::new();
+    let mut contributor_map: std::collections::BTreeMap<String, (usize, bool)> =
+        std::collections::BTreeMap::new();
     for package in packages.iter().filter(|package| package.selected) {
         for (section, entries) in &package.changelog.sections {
             let bucket = sections.entry(section.clone()).or_insert_with(Vec::new);
@@ -626,8 +645,27 @@ fn aggregate_changelog(packages: &[PackageReleaseAnalysis]) -> PendingChangelog 
                 bucket.push(format!("{}: {}", package.name, entry));
             }
         }
+        for contributor in &package.changelog.contributors {
+            let entry = contributor_map
+                .entry(contributor.name.clone())
+                .or_insert((0, contributor.first_contribution));
+            entry.0 += contributor.commit_count;
+            entry.1 = entry.1 && contributor.first_contribution;
+        }
     }
-    PendingChangelog { sections }
+    let mut contributors: Vec<crate::changelog::ContributorInfo> = contributor_map
+        .into_iter()
+        .map(|(name, (commit_count, first_contribution))| crate::changelog::ContributorInfo {
+            name,
+            commit_count,
+            first_contribution,
+        })
+        .collect();
+    contributors.sort_by(|a, b| b.commit_count.cmp(&a.commit_count).then(a.name.cmp(&b.name)));
+    PendingChangelog {
+        sections,
+        contributors,
+    }
 }
 
 pub fn read_current_version(
