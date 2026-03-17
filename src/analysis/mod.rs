@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::Path,
+};
 
 use anyhow::{Context, Result, bail};
 
@@ -7,6 +11,7 @@ use crate::{
     config::{Config, VersionFileConfig},
     conventional_commits::ConventionalCommit,
     git::{CommitSummary, GitRepository},
+    github::{self, GitHubClient},
     version::{BumpLevel, Version},
     version_files,
 };
@@ -108,7 +113,8 @@ fn analyze_single_package(
             .authors_before_latest_tag()?
             .into_iter()
             .collect();
-        changelog.add_contributors(&commits, &known_authors, &config.changelog);
+        let display_commits = resolve_contributor_identities(repo, config, &commits);
+        changelog.add_contributors(&display_commits, &known_authors, &config.changelog);
     }
 
     Ok(ReleaseAnalysis {
@@ -169,7 +175,8 @@ fn analyze_monorepo(
                 .authors_before_latest_tag()?
                 .into_iter()
                 .collect();
-            changelog.add_contributors(&package_commits, &known_authors, &config.changelog);
+            let display_commits = resolve_contributor_identities(repo, config, &package_commits);
+            changelog.add_contributors(&display_commits, &known_authors, &config.changelog);
         }
 
         packages.push(PackageReleaseAnalysis {
@@ -552,6 +559,15 @@ fn detect_package_name(package_root: &Path) -> Option<String> {
         .map(ToString::to_string)
 }
 
+pub fn detect_project_name(repo_root: &Path, package_root: &str) -> Option<String> {
+    let package_path = if package_root == "." {
+        repo_root.to_path_buf()
+    } else {
+        repo_root.join(package_root)
+    };
+    detect_package_name(&package_path)
+}
+
 fn detect_python_pattern(path: &Path) -> Option<String> {
     let contents = fs::read_to_string(path).ok()?;
 
@@ -718,4 +734,40 @@ pub fn update_version_files(
     }
 
     Ok(())
+}
+
+fn resolve_contributor_identities(
+    repo: &GitRepository,
+    config: &Config,
+    commits: &[CommitSummary],
+) -> Vec<CommitSummary> {
+    let Ok(repo_ref) = github::detect_repo(repo, &config.github) else {
+        return commits.to_vec();
+    };
+    let Ok(token) = env::var(&config.github.token_env) else {
+        return commits.to_vec();
+    };
+    let Ok(client) = GitHubClient::new(&config.github.api_base, &token, repo_ref) else {
+        return commits.to_vec();
+    };
+
+    let mut logins = BTreeMap::new();
+    for commit in commits {
+        if let Ok(details) = client.commit_details(&commit.id)
+            && let Some(user) = details.author.or(details.committer)
+        {
+            logins.insert(commit.id.clone(), user.login);
+        }
+    }
+
+    commits
+        .iter()
+        .cloned()
+        .map(|mut commit| {
+            if let Some(login) = logins.get(&commit.id) {
+                commit.author = login.clone();
+            }
+            commit
+        })
+        .collect()
 }

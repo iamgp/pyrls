@@ -54,6 +54,8 @@ pub struct StatusArgs {
     pub short: bool,
     #[arg(long)]
     pub json: bool,
+    #[arg(long)]
+    pub channel: bool,
     #[arg(long, value_name = "TAG")]
     pub since: Option<String>,
 }
@@ -81,6 +83,9 @@ pub struct GenerateCiArgs {
 
 #[derive(Debug, Args)]
 pub struct PreReleaseArgs {
+    #[arg(long, value_name = "CHANNEL")]
+    pub channel: Option<String>,
+
     /// Create a pre-release version (alpha, beta, or rc)
     #[arg(long, value_name = "KIND", conflicts_with = "finalize")]
     pub pre_release: Option<PreReleaseKind>,

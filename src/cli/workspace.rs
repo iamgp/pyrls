@@ -76,6 +76,16 @@ pub fn run(cli: &Cli) -> Result<()> {
             style(dep_suffix).dim()
         );
     }
+    let known_versions: std::collections::BTreeSet<&str> =
+        members.iter().map(|member| member.version.as_str()).collect();
+    if known_versions.len() > 1 {
+        println!();
+        println!(
+            " {} {}",
+            style("Warning:").yellow().bold(),
+            "workspace members have mismatched versions"
+        );
+    }
     println!();
 
     Ok(())

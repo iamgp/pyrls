@@ -23,6 +23,8 @@ pub struct Config {
     pub workspace: WorkspaceConfig,
     #[serde(default)]
     pub ci: CiConfig,
+    #[serde(default)]
+    pub channels: Vec<ChannelConfig>,
 }
 
 impl Config {
@@ -62,6 +64,17 @@ impl Config {
 
         for version_file in &self.version_files {
             validate_version_file(version_file)?;
+        }
+
+        for channel in &self.channels {
+            if channel.branch.trim().is_empty() {
+                bail!("channels.branch must not be empty");
+            }
+            if let Some(prerelease) = &channel.prerelease
+                && !matches!(prerelease.as_str(), "a" | "b" | "rc")
+            {
+                bail!("channels.prerelease must be one of: a, b, rc");
+            }
         }
 
         let provider = self.publish.provider.trim();
@@ -108,6 +121,17 @@ impl Config {
             None => Some(default_section_for_commit_type(commit_type).to_string()),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChannelConfig {
+    pub branch: String,
+    #[serde(default)]
+    pub publish: bool,
+    #[serde(default)]
+    pub prerelease: Option<String>,
+    #[serde(default)]
+    pub version_range: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

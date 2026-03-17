@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use console::style;
+use std::env;
 
 use crate::{
     analysis::{self, PackageReleaseAnalysis, ReleaseAnalysis},
@@ -7,7 +8,8 @@ use crate::{
     config::Config,
     conventional_commits::ConventionalCommit,
     git::GitRepository,
-    progress,
+    github::{self, GitHubClient, PullRequest},
+    progress, pypi,
 };
 
 pub fn run(cli: &Cli, args: &StatusArgs) -> Result<()> {
@@ -29,8 +31,10 @@ pub fn run(cli: &Cli, args: &StatusArgs) -> Result<()> {
         result?
     };
 
-    if args.json {
-        print_json(&repo, &analysis)?;
+    if args.channel {
+        print_channel(&repo, &config);
+    } else if args.json {
+        print_json(&repo, &config, &analysis)?;
     } else if args.short {
         print_short(&analysis);
     } else if cli.dry_run && !args.json && !args.short {
@@ -40,6 +44,27 @@ pub fn run(cli: &Cli, args: &StatusArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_channel(repo: &GitRepository, config: &Config) {
+    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
+    let channel = config.channels.iter().find(|channel| channel.branch == branch);
+
+    match channel {
+        Some(channel) => {
+            let prerelease = channel
+                .prerelease
+                .as_deref()
+                .unwrap_or("stable");
+            let publish = if channel.publish { "publish" } else { "no-publish" };
+            if let Some(range) = &channel.version_range {
+                println!("{} {} {} {}", branch, prerelease, publish, range);
+            } else {
+                println!("{} {} {}", branch, prerelease, publish);
+            }
+        }
+        None => println!("{} unconfigured", branch),
+    }
 }
 
 fn print_legacy(cli: &Cli, repo: &GitRepository, analysis: &ReleaseAnalysis) -> Result<()> {
@@ -110,12 +135,16 @@ fn print_legacy(cli: &Cli, repo: &GitRepository, analysis: &ReleaseAnalysis) -> 
     Ok(())
 }
 
-fn print_json(repo: &GitRepository, analysis: &ReleaseAnalysis) -> Result<()> {
+fn print_json(repo: &GitRepository, config: &Config, analysis: &ReleaseAnalysis) -> Result<()> {
+    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
+    let channel = config.channels.iter().find(|channel| channel.branch == branch);
+    let github_status = fetch_github_status(repo, config, analysis).ok().flatten();
     let packages: Vec<serde_json::Value> = analysis
         .package_plan
         .packages
         .iter()
         .map(|pkg| {
+            let published = pypi_version_for_package(repo, pkg);
             serde_json::json!({
                 "name": pkg.name,
                 "root": pkg.root,
@@ -123,6 +152,7 @@ fn print_json(repo: &GitRepository, analysis: &ReleaseAnalysis) -> Result<()> {
                 "next_version": pkg.next_version.as_ref().map(|v| v.to_string()),
                 "bump": pkg.bump.as_str(),
                 "selected": pkg.selected,
+                "published_version": published.map(|v| v.to_string()),
                 "commit_count": pkg.commits.len(),
                 "commits": pkg.commits.iter().map(|c| {
                     serde_json::json!({
@@ -135,13 +165,26 @@ fn print_json(repo: &GitRepository, analysis: &ReleaseAnalysis) -> Result<()> {
         .collect();
 
     let output = serde_json::json!({
-        "branch": repo.current_branch().unwrap_or_else(|_| "unknown".to_string()),
+        "branch": branch,
+        "channel": channel.map(|c| serde_json::json!({
+            "branch": c.branch,
+            "publish": c.publish,
+            "prerelease": c.prerelease,
+            "version_range": c.version_range,
+        })),
         "last_tag": repo.latest_tag().unwrap_or(None),
         "current_version": analysis.current_version.to_string(),
         "next_version": analysis.next_version.as_ref().map(|v| v.to_string()),
         "bump": analysis.bump.as_str(),
         "commit_count": analysis.commits.len(),
         "release_mode": analysis.package_plan.release_mode,
+        "github": github_status.as_ref().map(|status| serde_json::json!({
+            "number": status.pr.number,
+            "title": status.pr.title,
+            "url": status.pr.html_url,
+            "approvals": status.approvals,
+            "checks": status.check_state,
+        })),
         "packages": packages,
     });
 
@@ -188,24 +231,39 @@ fn print_dashboard(
 
     let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
     let last_tag = repo.latest_tag().unwrap_or(None);
+    let github_status = fetch_github_status(repo, config, analysis).ok().flatten();
 
     for pkg in &analysis.package_plan.packages {
         print_package_section(pkg, &branch, &last_tag, config, args);
         println!();
     }
 
-    // Release PR status placeholder
-    println!(
-        " {} {}",
-        style("Release PR:").dim(),
-        style("not yet implemented").dim().italic()
-    );
-    // PyPI placeholder
-    println!(
-        " {} {}",
-        style("PyPI:").dim(),
-        style("not yet implemented").dim().italic()
-    );
+    if let Some(status) = github_status {
+        println!(
+            " {} #{} open · {} approval(s) · checks {}",
+            style("Release PR").cyan().bold(),
+            status.pr.number,
+            status.approvals,
+            status.check_state
+        );
+    } else {
+        println!(" {} none open", style("Release PR").cyan().bold());
+    }
+
+    for pkg in &analysis.package_plan.packages {
+        match pypi_version_for_package(repo, pkg) {
+            Some(version) => println!(
+                " {} {} published",
+                style(format!("PyPI {}", pkg.name)).cyan().bold(),
+                version
+            ),
+            None => println!(
+                " {} {}",
+                style(format!("PyPI {}", pkg.name)).cyan().bold(),
+                style("not published or unavailable").dim()
+            ),
+        }
+    }
     println!();
 
     Ok(())
@@ -341,4 +399,54 @@ fn print_package_section(
         mw = msg_width + 2,
         hw = hash_width + 2
     );
+}
+
+struct StatusPr {
+    pr: PullRequest,
+    approvals: usize,
+    check_state: String,
+}
+
+fn fetch_github_status(
+    repo: &GitRepository,
+    config: &Config,
+    analysis: &ReleaseAnalysis,
+) -> Result<Option<StatusPr>> {
+    let repo_ref = github::detect_repo(repo, &config.github)?;
+    let token = env::var(&config.github.token_env)
+        .with_context(|| format!("missing GitHub token in {}", config.github.token_env))?;
+    let client = GitHubClient::new(&config.github.api_base, &token, repo_ref)?;
+    let plan = github::build_release_pr_plan(config, analysis)?;
+    let Some(pr) = client.find_open_pr(&plan.branch, &plan.base)? else {
+        return Ok(None);
+    };
+    let approvals = client
+        .list_reviews(pr.number)?
+        .into_iter()
+        .filter(|review| review.state == "APPROVED")
+        .count();
+    let check_state = match pr.head.as_ref() {
+        Some(head) => client
+            .combined_status(&head.sha)
+            .map(|status| status.state)
+            .unwrap_or_else(|_| "unknown".to_string()),
+        None => "unknown".to_string(),
+    };
+    Ok(Some(StatusPr {
+        pr,
+        approvals,
+        check_state,
+    }))
+}
+
+fn pypi_version_for_package(
+    repo: &GitRepository,
+    pkg: &PackageReleaseAnalysis,
+) -> Option<crate::version::Version> {
+    let project_name = if pkg.root == "." {
+        analysis::detect_project_name(repo.path(), ".").unwrap_or_else(|| pkg.name.clone())
+    } else {
+        analysis::detect_project_name(repo.path(), &pkg.root).unwrap_or_else(|| pkg.name.clone())
+    };
+    pypi::latest_published_version(&project_name).ok().flatten()
 }

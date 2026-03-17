@@ -2,6 +2,7 @@ use std::{fs, path::Path, process::Command, time::SystemTime};
 
 use anyhow::{Context, Result};
 use console::style;
+use openssl::sha::sha256;
 
 use crate::{
     analysis,
@@ -18,9 +19,16 @@ enum BuildResult {
     Skipped,
 }
 
+enum ValidationResult {
+    Passed,
+    Failed,
+    Skipped,
+}
+
 struct ArtifactInfo {
     name: String,
     size_bytes: u64,
+    sha256: String,
 }
 
 pub fn run(cli: &Cli) -> Result<()> {
@@ -36,6 +44,7 @@ pub fn run(cli: &Cli) -> Result<()> {
         .next_version
         .as_ref()
         .context("nothing to release — no version bump detected")?;
+    let snapshot_version = format!("{}.dev1+snapshot", next_version.base());
 
     let snapshot_dir = Path::new(".pyrls/snapshot");
     fs::create_dir_all(snapshot_dir).context("failed to create .pyrls/snapshot")?;
@@ -43,7 +52,7 @@ pub fn run(cli: &Cli) -> Result<()> {
     // Generate changelog entry
     let emoji = &config.changelog.first_contribution_emoji;
     let release_notes =
-        changelog::render_release_notes(&next_version.to_string(), "snapshot", &analysis.changelog, emoji);
+        changelog::render_release_notes(&snapshot_version, "snapshot", &analysis.changelog, emoji);
     fs::write(snapshot_dir.join("CHANGELOG_ENTRY.md"), &release_notes)
         .context("failed to write CHANGELOG_ENTRY.md")?;
 
@@ -56,12 +65,20 @@ pub fn run(cli: &Cli) -> Result<()> {
     let dist_dir = snapshot_dir.join("dist");
     fs::create_dir_all(&dist_dir)?;
     let build_result = try_build(&dist_dir);
+    let validation_result = try_validate(&dist_dir);
 
     // Collect dist artifacts
     let artifacts = collect_artifacts(&dist_dir);
 
     // Write manifest
-    let manifest = build_manifest(&next_version.to_string(), &artifacts, &build_result);
+    let manifest = build_manifest(
+        &snapshot_version,
+        &artifacts,
+        &build_result,
+        &validation_result,
+        &release_notes,
+        &pr_plan.body,
+    );
     fs::write(
         snapshot_dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest)?,
@@ -72,7 +89,7 @@ pub fn run(cli: &Cli) -> Result<()> {
     println!();
     println!("{}", style("Snapshot complete").green().bold());
     println!();
-    println!(" Version: {}", style(next_version).cyan());
+    println!(" Version: {}", style(&snapshot_version).cyan());
     println!(" Output:  .pyrls/snapshot/");
     println!("   CHANGELOG_ENTRY.md");
     println!("   RELEASE_PR_BODY.md");
@@ -116,7 +133,14 @@ fn collect_artifacts(dist_dir: &Path) -> Vec<ArtifactInfo> {
                 .to_string_lossy()
                 .into_owned();
             let size_bytes = path.metadata().map(|m| m.len()).unwrap_or(0);
-            artifacts.push(ArtifactInfo { name, size_bytes });
+            let sha256 = fs::read(&path)
+                .map(|bytes| hex_digest(&sha256(&bytes)))
+                .unwrap_or_default();
+            artifacts.push(ArtifactInfo {
+                name,
+                size_bytes,
+                sha256,
+            });
         }
     }
     artifacts.sort_by(|a, b| a.name.cmp(&b.name));
@@ -127,6 +151,9 @@ fn build_manifest(
     version: &str,
     artifacts: &[ArtifactInfo],
     build: &BuildResult,
+    validation: &ValidationResult,
+    changelog_entry: &str,
+    release_pr_body: &str,
 ) -> serde_json::Value {
     serde_json::json!({
         "version": version,
@@ -136,16 +163,57 @@ fn build_manifest(
             serde_json::json!({
                 "name": a.name,
                 "size_bytes": a.size_bytes,
+                "sha256": a.sha256,
             })
         }).collect::<Vec<_>>(),
+        "changelog_entry": changelog_entry,
+        "release_pr_body": release_pr_body,
         "checks": {
             "uv_build": match build {
                 BuildResult::Passed => "passed",
                 BuildResult::Failed => "failed",
                 BuildResult::Skipped => "skipped",
-            }
+            },
+            "twine_check": match validation {
+                ValidationResult::Passed => "passed",
+                ValidationResult::Failed => "failed",
+                ValidationResult::Skipped => "skipped",
+            },
         }
     })
+}
+
+fn try_validate(dist_dir: &Path) -> ValidationResult {
+    let entries = match fs::read_dir(dist_dir) {
+        Ok(entries) => entries,
+        Err(_) => return ValidationResult::Skipped,
+    };
+
+    let files: Vec<_> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .collect();
+    if files.is_empty() {
+        return ValidationResult::Skipped;
+    }
+
+    let mut command = Command::new("twine");
+    command.arg("check");
+    command.args(&files);
+    match command.output() {
+        Ok(output) if output.status.success() => ValidationResult::Passed,
+        Ok(_) => ValidationResult::Failed,
+        Err(_) => ValidationResult::Skipped,
+    }
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push_str(&format!("{byte:02x}"));
+    }
+    output
 }
 
 fn timestamp_now() -> String {

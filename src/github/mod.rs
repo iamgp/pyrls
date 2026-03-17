@@ -757,11 +757,44 @@ pub fn parse_remote_url(value: &str) -> Option<RepoRef> {
 #[derive(Debug, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub html_url: String,
+    #[serde(default)]
+    pub state: String,
+    pub head: Option<PullRequestHead>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Release {
     pub id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PullRequestHead {
+    pub sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PullRequestReview {
+    pub state: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CombinedStatus {
+    pub state: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommitDetails {
+    pub author: Option<GitHubUser>,
+    pub committer: Option<GitHubUser>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitHubUser {
+    pub login: String,
 }
 
 pub struct GitHubClient {
@@ -861,6 +894,55 @@ impl GitHubClient {
         match self.get_raw(&url) {
             Ok(response) => Ok(Some(parse_json(response)?)),
             Err(_) => Ok(None),
+        }
+    }
+
+    pub fn list_reviews(&self, number: u64) -> Result<Vec<PullRequestReview>> {
+        self.get(&format!(
+            "{}/repos/{}/{}/pulls/{}/reviews",
+            self.api_base, self.repo.owner, self.repo.name, number
+        ))
+    }
+
+    pub fn combined_status(&self, reference: &str) -> Result<CombinedStatus> {
+        self.get(&format!(
+            "{}/repos/{}/{}/commits/{}/status",
+            self.api_base, self.repo.owner, self.repo.name, reference
+        ))
+    }
+
+    pub fn commit_details(&self, sha: &str) -> Result<CommitDetails> {
+        self.get(&format!(
+            "{}/repos/{}/{}/commits/{}",
+            self.api_base, self.repo.owner, self.repo.name, sha
+        ))
+    }
+
+    pub fn token_scopes(&self) -> Result<Vec<String>> {
+        let url = format!("{}/user", self.api_base);
+        let response = ureq::get(&url)
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .set("Accept", "application/vnd.github+json")
+            .set("User-Agent", "pyrls")
+            .call();
+
+        match response {
+            Ok(response) => {
+                let scopes = response
+                    .header("X-OAuth-Scopes")
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|scope| !scope.is_empty())
+                    .map(ToString::to_string)
+                    .collect();
+                Ok(scopes)
+            }
+            Err(ureq::Error::Status(status, response)) => {
+                let body = response.into_string().unwrap_or_default();
+                bail!("GitHub API request failed with status {status}: {body}")
+            }
+            Err(error) => Err(error.into()),
         }
     }
 

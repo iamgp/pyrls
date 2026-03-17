@@ -82,6 +82,7 @@ fn build_config(repo: Option<&GitRepository>, repo_root: &Path) -> Config {
         github: github_config,
         workspace: Default::default(),
         ci: Default::default(),
+        channels: Vec::new(),
     }
 }
 

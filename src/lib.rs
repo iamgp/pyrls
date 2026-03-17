@@ -5,5 +5,6 @@ pub mod conventional_commits;
 pub mod git;
 pub mod github;
 pub mod publish;
+pub mod pypi;
 pub mod version;
 pub mod version_files;

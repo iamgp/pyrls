@@ -7,6 +7,7 @@ mod git;
 mod github;
 mod progress;
 mod publish;
+mod pypi;
 mod version;
 mod version_files;
 

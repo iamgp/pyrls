@@ -4,10 +4,11 @@ use anyhow::Result;
 use console::style;
 
 use crate::{
-    analysis::read_current_version,
+    analysis::{detect_project_name, read_current_version},
     config::Config,
     git::{run_git, GitRepository},
     github,
+    pypi,
     version::Version,
 };
 
@@ -311,6 +312,30 @@ fn check_github(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Ch
 
     match github::detect_repo(repo, &config.github) {
         Ok(repo_ref) => {
+            if let Ok(client) = github::GitHubClient::new(&config.github.api_base, &token, repo_ref.clone())
+                && let Ok(scopes) = client.token_scopes()
+            {
+                if scopes.is_empty() {
+                    checks.push(CheckResult::Warn(
+                        "GitHub token scopes could not be determined".to_string(),
+                    ));
+                } else {
+                    for required in ["contents", "pull_requests", "repo"] {
+                        if scopes.iter().any(|scope| scope == required) {
+                            checks.push(CheckResult::Pass(format!(
+                                "GitHub token exposes {} scope",
+                                required
+                            )));
+                        }
+                    }
+                    if !scopes.iter().any(|scope| scope == "repo" || scope == "contents") {
+                        checks.push(CheckResult::Warn(
+                            "GitHub token does not advertise a contents/repo scope".to_string(),
+                        ));
+                    }
+                }
+            }
+
             let url = format!(
                 "{}/repos/{}/{}",
                 config.github.api_base.trim_end_matches('/'),
@@ -377,14 +402,23 @@ fn check_build(config: &Option<Config>) -> Vec<CheckResult> {
         }
     }
 
-    if Path::new("pyproject.toml").exists() {
-        checks.push(CheckResult::Pass(
-            "pyproject.toml exists (build should succeed)".to_string(),
-        ));
-    } else {
+    if !Path::new("pyproject.toml").exists() {
         checks.push(CheckResult::Warn(
             "pyproject.toml not found (build may fail)".to_string(),
         ));
+        return checks;
+    }
+
+    checks.push(CheckResult::Pass("pyproject.toml exists".to_string()));
+
+    if Command::new("uv")
+        .args(["build", "--no-sources"])
+        .output()
+        .is_ok_and(|output| output.status.success())
+    {
+        checks.push(CheckResult::Pass("uv build succeeds".to_string()));
+    } else {
+        checks.push(CheckResult::Warn("uv build failed".to_string()));
     }
 
     checks
@@ -406,8 +440,12 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
     }
 
     if let Some(repo) = repo {
-        match (read_current_version(Path::new("."), &config.version_files), repo.latest_tag()) {
+        match (
+            read_current_version(Path::new("."), &config.version_files),
+            repo.latest_tag(),
+        ) {
             (Ok(Some(version_str)), Ok(Some(tag))) => {
+                let parsed = version_str.parse::<Version>().ok();
                 let expected_tag = format!("{}{}", config.release.tag_prefix, version_str);
                 if tag == expected_tag {
                     checks.push(CheckResult::Fail(format!(
@@ -419,6 +457,22 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
                         "Version {} is not yet tagged",
                         version_str
                     )));
+                }
+
+                if let (Some(version), Some(project_name)) = (parsed, detect_project_name(repo.path(), ".")) {
+                    match pypi::has_version(&project_name, &version) {
+                        Ok(true) => checks.push(CheckResult::Fail(format!(
+                            "Version {} is already published on PyPI",
+                            version
+                        ))),
+                        Ok(false) => checks.push(CheckResult::Pass(format!(
+                            "Version {} is not yet published on PyPI",
+                            version
+                        ))),
+                        Err(_) => checks.push(CheckResult::Warn(
+                            "Could not query PyPI for current version".to_string(),
+                        )),
+                    }
                 }
             }
             (Ok(Some(version_str)), Ok(None)) => {
@@ -448,6 +502,20 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
         checks.push(CheckResult::Warn(
             "No PyPI credentials or OIDC configured".to_string(),
         ));
+    }
+
+    if config.publish.oidc || config.publish.trusted_publishing {
+        if env::var("ACTIONS_ID_TOKEN_REQUEST_URL").is_ok()
+            && env::var("ACTIONS_ID_TOKEN_REQUEST_TOKEN").is_ok()
+        {
+            checks.push(CheckResult::Pass(
+                "OIDC environment is available".to_string(),
+            ));
+        } else {
+            checks.push(CheckResult::Warn(
+                "OIDC trusted publisher could not be validated outside GitHub Actions".to_string(),
+            ));
+        }
     }
 
     checks

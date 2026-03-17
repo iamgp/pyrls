@@ -35,9 +35,10 @@ pub fn run(cli: &Cli, args: &GenerateCiArgs) -> Result<()> {
             println!("{} is already up to date", workflow_path.display());
             return Ok(());
         }
-        println!(
-            "{} Overwriting existing {}",
-            style("⚠").yellow(),
+        println!("{} Existing workflow differs:", style("⚠").yellow());
+        println!("{}", render_diff(&existing, &yaml));
+        anyhow::bail!(
+            "refusing to overwrite {} without review; run with --dry-run to inspect and replace manually",
             workflow_path.display()
         );
     }
@@ -104,18 +105,36 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
     yaml.push_str("  id-token: write\n");
     yaml.push_str("\n");
     yaml.push_str("jobs:\n");
-    yaml.push_str("  release-pr:\n");
-    yaml.push_str("    runs-on: ubuntu-latest\n");
-    yaml.push_str("    steps:\n");
-    yaml.push_str("      - uses: actions/checkout@v4\n");
-    yaml.push_str("        with:\n");
-    yaml.push_str("          fetch-depth: 0\n");
-    yaml.push_str("\n");
-    yaml.push_str("      - uses: pyrls/action@v1\n");
-    yaml.push_str("        with:\n");
-    yaml.push_str("          command: release pr\n");
-    yaml.push_str("        env:\n");
-    yaml.push_str("          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n");
+    if config.monorepo.enabled && config.monorepo.release_mode == "per_package" && !config.monorepo.packages.is_empty() {
+        for package in &config.monorepo.packages {
+            let job_name = package.replace(['/', '.'], "-");
+            yaml.push_str(&format!("  release-pr-{}:\n", job_name));
+            yaml.push_str("    runs-on: ubuntu-latest\n");
+            yaml.push_str("    steps:\n");
+            yaml.push_str("      - uses: actions/checkout@v4\n");
+            yaml.push_str("        with:\n");
+            yaml.push_str("          fetch-depth: 0\n");
+            yaml.push_str("\n");
+            yaml.push_str("      - uses: pyrls/action@v1\n");
+            yaml.push_str("        with:\n");
+            yaml.push_str(&format!("          command: release pr --channel {}\n", branch));
+            yaml.push_str("        env:\n");
+            yaml.push_str("          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n");
+        }
+    } else {
+        yaml.push_str("  release-pr:\n");
+        yaml.push_str("    runs-on: ubuntu-latest\n");
+        yaml.push_str("    steps:\n");
+        yaml.push_str("      - uses: actions/checkout@v4\n");
+        yaml.push_str("        with:\n");
+        yaml.push_str("          fetch-depth: 0\n");
+        yaml.push_str("\n");
+        yaml.push_str("      - uses: pyrls/action@v1\n");
+        yaml.push_str("        with:\n");
+        yaml.push_str("          command: release pr\n");
+        yaml.push_str("        env:\n");
+        yaml.push_str("          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n");
+    }
 
     if config.publish.enabled {
         yaml.push_str("\n");
@@ -144,4 +163,37 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
     }
 
     yaml
+}
+
+fn render_diff(existing: &str, generated: &str) -> String {
+    let old_lines: Vec<&str> = existing.lines().collect();
+    let new_lines: Vec<&str> = generated.lines().collect();
+    let mut output = String::new();
+    let max = old_lines.len().max(new_lines.len());
+    for idx in 0..max {
+        match (old_lines.get(idx), new_lines.get(idx)) {
+            (Some(old), Some(new)) if old == new => {
+                output.push_str("  ");
+                output.push_str(old);
+            }
+            (Some(old), Some(new)) => {
+                output.push_str("- ");
+                output.push_str(old);
+                output.push('\n');
+                output.push_str("+ ");
+                output.push_str(new);
+            }
+            (Some(old), None) => {
+                output.push_str("- ");
+                output.push_str(old);
+            }
+            (None, Some(new)) => {
+                output.push_str("+ ");
+                output.push_str(new);
+            }
+            (None, None) => {}
+        }
+        output.push('\n');
+    }
+    output
 }
