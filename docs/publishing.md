@@ -4,7 +4,7 @@
 
 - Python: `uv` or `twine`
 - Rust: `cargo`
-- Go: no first-class publish provider yet
+- Go: `goreleaser`
 
 ## Enable publishing
 
@@ -51,6 +51,18 @@ provider = "cargo"
 repository = "crates-io"
 ```
 
+### `goreleaser`
+
+```toml
+[project]
+ecosystem = "go"
+
+[publish]
+enabled = true
+provider = "goreleaser"
+repository = "github"
+```
+
 ## TestPyPI or custom repositories
 
 ```toml
@@ -84,6 +96,8 @@ For Python providers, `relx release publish` expects built artifacts to already 
 
 For Rust, `relx release publish` runs `cargo publish --locked` and does not require a `dist/` directory.
 
+For Go, `relx release publish` runs `goreleaser release --clean`.
+
 Typical CI sequence:
 
 ```bash
@@ -96,6 +110,12 @@ Rust example:
 ```bash
 cargo build --locked
 relx release publish
+```
+
+Go example:
+
+```bash
+goreleaser release --clean
 ```
 
 ## Dry run
