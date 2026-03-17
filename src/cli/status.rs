@@ -6,8 +6,9 @@ use crate::{
     analysis::{self, PackageReleaseAnalysis, ReleaseAnalysis},
     channels,
     cli::{Cli, StatusArgs},
-    config::Config,
+    config::{Config, Ecosystem},
     conventional_commits::ConventionalCommit,
+    cratesio, ecosystem,
     git::GitRepository,
     github::{self, GitHubClient, PullRequest},
     progress, pypi,
@@ -167,7 +168,7 @@ fn print_json(
                 "next_version": pkg.next_version.as_ref().map(|v| v.to_string()),
                 "bump": pkg.bump.as_str(),
                 "selected": pkg.selected,
-                "published_version": published.map(|v| v.to_string()),
+                "published_version": published.map(|(_, v)| v.to_string()),
                 "commit_count": pkg.commits.len(),
                 "commits": pkg.commits.iter().map(|c| {
                     serde_json::json!({
@@ -262,16 +263,19 @@ fn print_dashboard(
 
     for pkg in &analysis.package_plan.packages {
         match pypi_version_for_package(repo, pkg) {
-            Some(version) => println!(
+            Some((label, version)) => println!(
                 " {} {} published",
-                style(format!("PyPI {}", pkg.name)).cyan().bold(),
+                style(format!("{} {}", label, pkg.name)).cyan().bold(),
                 version
             ),
-            None => println!(
-                " {} {}",
-                style(format!("PyPI {}", pkg.name)).cyan().bold(),
-                style("not published or unavailable").dim()
-            ),
+            None => {
+                let label = registry_label(repo, config);
+                println!(
+                    " {} {}",
+                    style(format!("{} {}", label, pkg.name)).cyan().bold(),
+                    style("not published or unavailable").dim()
+                )
+            }
         }
     }
     println!();
@@ -470,11 +474,30 @@ fn fetch_github_status(
 fn pypi_version_for_package(
     repo: &GitRepository,
     pkg: &PackageReleaseAnalysis,
-) -> Option<crate::version::Version> {
+) -> Option<(String, crate::version::Version)> {
+    let ecosystem = ecosystem::detect(repo.path(), None);
     let project_name = if pkg.root == "." {
         analysis::detect_project_name(repo.path(), ".").unwrap_or_else(|| pkg.name.clone())
     } else {
         analysis::detect_project_name(repo.path(), &pkg.root).unwrap_or_else(|| pkg.name.clone())
     };
-    pypi::latest_published_version(&project_name).ok().flatten()
+    match ecosystem {
+        Ecosystem::Python => pypi::latest_published_version(&project_name)
+            .ok()
+            .flatten()
+            .map(|version| ("PyPI".to_string(), version)),
+        Ecosystem::Rust => cratesio::latest_published_version(&project_name)
+            .ok()
+            .flatten()
+            .map(|version| ("crates.io".to_string(), version)),
+        Ecosystem::Go => None,
+    }
+}
+
+fn registry_label(repo: &GitRepository, config: &Config) -> &'static str {
+    match ecosystem::detect(repo.path(), Some(config)) {
+        Ecosystem::Python => "PyPI",
+        Ecosystem::Rust => "crates.io",
+        Ecosystem::Go => "Registry",
+    }
 }

@@ -3,6 +3,7 @@ pub mod changelog;
 pub mod channels;
 pub mod config;
 pub mod conventional_commits;
+pub mod cratesio;
 pub mod ecosystem;
 pub mod git;
 pub mod github;
