@@ -104,9 +104,14 @@ pub fn build_release_tag_plan(
     } else {
         format!("{}{}", config.release.tag_prefix, version)
     };
+    let title = config
+        .release
+        .release_name
+        .replace("{tag_name}", &tag_name)
+        .replace("{version}", &version);
     Ok(ReleaseTagPlan {
         version,
-        title: format!("Release {tag_name}"),
+        title,
         target: repo.current_branch()?,
         release_notes: changelog::render_release_notes(
             &tag_name,

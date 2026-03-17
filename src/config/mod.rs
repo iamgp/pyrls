@@ -142,6 +142,8 @@ pub struct ReleaseConfig {
     pub changelog_file: String,
     #[serde(default = "default_pr_title")]
     pub pr_title: String,
+    #[serde(default = "default_release_name")]
+    pub release_name: String,
 }
 
 impl Default for ReleaseConfig {
@@ -151,6 +153,7 @@ impl Default for ReleaseConfig {
             tag_prefix: default_tag_prefix(),
             changelog_file: default_changelog_file(),
             pr_title: default_pr_title(),
+            release_name: default_release_name(),
         }
     }
 }
@@ -285,6 +288,10 @@ fn default_changelog_file() -> String {
 
 fn default_pr_title() -> String {
     "chore(release): {version}".to_string()
+}
+
+fn default_release_name() -> String {
+    "Release {tag_name}".to_string()
 }
 
 fn default_strategy() -> String {
