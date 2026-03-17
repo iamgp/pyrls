@@ -205,7 +205,7 @@ pub fn execute_release_pr(
         &clone_path,
         [
             "push",
-            "--force-with-lease",
+            "--force",
             "origin",
             format!("HEAD:{}", plan.branch).as_str(),
         ],
@@ -324,7 +324,7 @@ fn execute_monorepo_unified_pr(
         &clone_path,
         [
             "push",
-            "--force-with-lease",
+            "--force",
             "origin",
             format!("HEAD:{}", plan.branch).as_str(),
         ],
@@ -426,7 +426,7 @@ fn execute_monorepo_per_package_pr(
         &clone_path,
         [
             "push",
-            "--force-with-lease",
+            "--force",
             "origin",
             format!("HEAD:{}", plan.branch).as_str(),
         ],
