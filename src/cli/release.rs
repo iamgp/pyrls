@@ -103,6 +103,10 @@ fn adjust_for_merged_release_pr(
 }
 
 pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
+    if command.snapshot {
+        return super::snapshot::run(cli);
+    }
+
     let repo = GitRepository::discover(".").context("failed to inspect git repository")?;
     let config = Config::load(&cli.config)?;
 

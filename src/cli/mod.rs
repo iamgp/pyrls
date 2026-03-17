@@ -1,6 +1,7 @@
 pub mod healthcheck;
 pub mod init;
 pub mod release;
+pub mod snapshot;
 pub mod status;
 pub mod validate;
 pub mod workspace;
@@ -57,6 +58,8 @@ pub struct StatusArgs {
 
 #[derive(Debug, Args)]
 pub struct ReleaseCommand {
+    #[arg(long)]
+    pub snapshot: bool,
     #[command(subcommand)]
     pub command: ReleaseSubcommand,
 }
