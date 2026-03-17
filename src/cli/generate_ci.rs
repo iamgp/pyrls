@@ -94,16 +94,16 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
         yaml.push_str("# Note: monorepo mode is enabled\n");
     }
     yaml.push_str("name: Release\n");
-    yaml.push_str("\n");
+    yaml.push('\n');
     yaml.push_str("on:\n");
     yaml.push_str("  push:\n");
     yaml.push_str(&format!("    branches: [{}]\n", branch));
-    yaml.push_str("\n");
+    yaml.push('\n');
     yaml.push_str("permissions:\n");
     yaml.push_str("  contents: write\n");
     yaml.push_str("  pull-requests: write\n");
     yaml.push_str("  id-token: write\n");
-    yaml.push_str("\n");
+    yaml.push('\n');
     yaml.push_str("jobs:\n");
     if config.monorepo.enabled
         && config.monorepo.release_mode == "per_package"
@@ -117,7 +117,7 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
             yaml.push_str("      - uses: actions/checkout@v4\n");
             yaml.push_str("        with:\n");
             yaml.push_str("          fetch-depth: 0\n");
-            yaml.push_str("\n");
+            yaml.push('\n');
             yaml.push_str("      - uses: pyrls/action@v1\n");
             yaml.push_str("        with:\n");
             yaml.push_str(&format!(
@@ -134,7 +134,7 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
         yaml.push_str("      - uses: actions/checkout@v4\n");
         yaml.push_str("        with:\n");
         yaml.push_str("          fetch-depth: 0\n");
-        yaml.push_str("\n");
+        yaml.push('\n');
         yaml.push_str("      - uses: pyrls/action@v1\n");
         yaml.push_str("        with:\n");
         yaml.push_str("          command: release pr\n");
@@ -143,15 +143,15 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
     }
 
     if config.publish.enabled {
-        yaml.push_str("\n");
+        yaml.push('\n');
         yaml.push_str("  publish:\n");
         yaml.push_str("    runs-on: ubuntu-latest\n");
         yaml.push_str("    if: startsWith(github.ref, 'refs/tags/')\n");
         yaml.push_str("    steps:\n");
         yaml.push_str("      - uses: actions/checkout@v4\n");
-        yaml.push_str("\n");
+        yaml.push('\n');
         yaml.push_str("      - uses: astral-sh/setup-uv@v5\n");
-        yaml.push_str("\n");
+        yaml.push('\n');
         if is_maturin {
             yaml.push_str("      - uses: PyO3/maturin-action@v1\n");
             yaml.push_str("        with:\n");
@@ -160,7 +160,7 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
         } else {
             yaml.push_str(&format!("      - run: {}\n", build_cmd));
         }
-        yaml.push_str("\n");
+        yaml.push('\n');
         yaml.push_str("      - uses: pyrls/action@v1\n");
         yaml.push_str("        with:\n");
         yaml.push_str("          command: release publish\n");

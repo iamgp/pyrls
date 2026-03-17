@@ -213,12 +213,11 @@ fn timestamp_now() -> String {
     if let Ok(output) = Command::new("git")
         .args(["show", "-s", "--format=%cI", "HEAD"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let ts = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !ts.is_empty() {
-                return ts;
-            }
+        let ts = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !ts.is_empty() {
+            return ts;
         }
     }
 

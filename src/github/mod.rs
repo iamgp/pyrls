@@ -761,8 +761,6 @@ pub struct PullRequest {
     pub title: String,
     #[serde(default)]
     pub html_url: String,
-    #[serde(default)]
-    pub state: String,
     pub head: Option<PullRequestHead>,
 }
 

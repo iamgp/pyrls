@@ -343,7 +343,7 @@ pub fn extract_dependency_names(repo_root: &Path, package_root: &str) -> Vec<Str
         .filter_map(|v| v.as_str())
         .map(|s| {
             let name = s
-                .split(|c: char| matches!(c, '>' | '<' | '=' | '!' | '[' | ';' | ' ' | '~'))
+                .split(['>', '<', '=', '!', '[', ';', ' ', '~'])
                 .next()
                 .unwrap_or(s);
             name.to_string()
@@ -354,7 +354,7 @@ pub fn extract_dependency_names(repo_root: &Path, package_root: &str) -> Vec<Str
 pub fn apply_cascade_bumps(
     repo_root: &Path,
     config: &Config,
-    packages: &mut Vec<PackageReleaseAnalysis>,
+    packages: &mut [PackageReleaseAnalysis],
 ) {
     if !config.workspace.cascade_bumps {
         return;
@@ -370,20 +370,20 @@ pub fn apply_cascade_bumps(
         return;
     }
 
-    for i in 0..packages.len() {
-        if packages[i].selected {
+    for package in packages.iter_mut() {
+        if package.selected {
             continue;
         }
 
-        let deps = extract_dependency_names(repo_root, &packages[i].root);
+        let deps = extract_dependency_names(repo_root, &package.root);
         let depends_on_bumped = deps.iter().any(|dep| bumped_names.contains(dep));
 
         if depends_on_bumped {
-            let next = BumpLevel::Patch.apply(&packages[i].current_version);
-            packages[i].next_version = next;
-            packages[i].bump = BumpLevel::Patch;
-            packages[i].selected = true;
-            packages[i].selection_reason =
+            let next = BumpLevel::Patch.apply(&package.current_version);
+            package.next_version = next;
+            package.bump = BumpLevel::Patch;
+            package.selected = true;
+            package.selection_reason =
                 "cascade bump: depends on a package with a version bump".to_string();
         }
     }

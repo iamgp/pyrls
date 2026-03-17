@@ -366,8 +366,7 @@ fn print_package_section(
         .map(|(_, m, _)| m.len())
         .max()
         .unwrap_or(7)
-        .max(7)
-        .min(50);
+        .clamp(7, 50);
     let hash_width = 7;
 
     // Table header

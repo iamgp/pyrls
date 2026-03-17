@@ -16,11 +16,7 @@ pub fn run(cli: &Cli) -> Result<()> {
     println!();
     println!("{}", style("pyrls workspace").bold());
     println!();
-    println!(
-        " {} {}",
-        style("Workspace root:").cyan().bold(),
-        "pyproject.toml"
-    );
+    println!(" {} pyproject.toml", style("Workspace root:").cyan().bold());
     println!(" {} {}", style("Discovery:").cyan().bold(), source);
 
     if member_roots.is_empty() {
@@ -79,9 +75,8 @@ pub fn run(cli: &Cli) -> Result<()> {
     if known_versions.len() > 1 {
         println!();
         println!(
-            " {} {}",
-            style("Warning:").yellow().bold(),
-            "workspace members have mismatched versions"
+            " {} workspace members have mismatched versions",
+            style("Warning:").yellow().bold()
         );
     }
     println!();
