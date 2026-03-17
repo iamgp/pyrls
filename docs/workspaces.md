@@ -1,9 +1,11 @@
-# Monorepos and uv Workspaces
+# Monorepos and Workspaces
 
 `relx` supports multi-package repositories in two ways:
 
 - explicit `[monorepo]` configuration
 - `uv` workspace auto-discovery
+- Cargo workspace auto-discovery
+- `go.work` auto-discovery
 
 ## Explicit monorepo configuration
 
@@ -51,6 +53,56 @@ Members:
   packages/core (mypackage-core 1.2.3)
   packages/cli (mypackage-cli 1.1.0) — depends on mypackage-core
   packages/sdk (mypackage-sdk 2.0.1)
+```
+
+## Cargo workspace auto-discovery
+
+If the root `Cargo.toml` defines `workspace.members`, `relx` can discover Rust crates automatically.
+
+Example layout:
+
+```text
+Cargo.toml
+crates/
+  core/Cargo.toml
+  cli/Cargo.toml
+```
+
+Example output:
+
+```text
+relx workspace
+
+Workspace root: Cargo.toml
+Discovery: cargo workspace (workspace.members)
+Members:
+  crates/core (core 1.2.3)
+  crates/cli (cli 1.2.3) — depends on core
+```
+
+## Go workspace auto-discovery
+
+If the repository root contains a `go.work` file with `use` entries, `relx` can discover Go modules automatically.
+
+Example layout:
+
+```text
+go.work
+services/
+  api/go.mod
+  worker/go.mod
+```
+
+Example output:
+
+```text
+relx workspace
+
+Workspace root: go.mod
+Discovery: go workspace (go.work use)
+Members:
+  services/api (api 0.9.0)
+  services/worker (worker 1.1.0)
 ```
 
 ## Package selection

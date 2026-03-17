@@ -73,6 +73,12 @@ jobs:
 - Rust: `dtolnay/rust-toolchain@stable` plus `cargo build --locked`
 - Go: `actions/setup-go@v5` plus `go build ./...`
 
+When publishing is enabled, the publish job reuses the same ecosystem-specific setup:
+
+- Python publish flows build artifacts and then call `relx release publish`
+- Rust publish flows build with Cargo and then call `relx release publish`
+- Go publish flows set up Go, build, and then call `relx release publish` via GoReleaser
+
 ## Required GitHub permissions
 
 For PR and release automation:
