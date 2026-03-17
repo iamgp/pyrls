@@ -6,9 +6,8 @@ use console::style;
 use crate::{
     analysis::{detect_project_name, read_current_version},
     config::Config,
-    git::{run_git, GitRepository},
-    github,
-    pypi,
+    git::{GitRepository, run_git},
+    github, pypi,
     version::Version,
 };
 
@@ -203,9 +202,7 @@ fn check_git(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Check
     let repo = match repo {
         Some(r) => r,
         None => {
-            checks.push(CheckResult::Fail(
-                "Not inside a git repository".to_string(),
-            ));
+            checks.push(CheckResult::Fail("Not inside a git repository".to_string()));
             return checks;
         }
     };
@@ -243,7 +240,9 @@ fn check_git(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Check
             }
         }
         Err(_) => {
-            checks.push(CheckResult::Warn("Could not determine current branch".to_string()));
+            checks.push(CheckResult::Warn(
+                "Could not determine current branch".to_string(),
+            ));
         }
     }
 
@@ -312,7 +311,8 @@ fn check_github(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Ch
 
     match github::detect_repo(repo, &config.github) {
         Ok(repo_ref) => {
-            if let Ok(client) = github::GitHubClient::new(&config.github.api_base, &token, repo_ref.clone())
+            if let Ok(client) =
+                github::GitHubClient::new(&config.github.api_base, &token, repo_ref.clone())
                 && let Ok(scopes) = client.token_scopes()
             {
                 if scopes.is_empty() {
@@ -328,7 +328,10 @@ fn check_github(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Ch
                             )));
                         }
                     }
-                    if !scopes.iter().any(|scope| scope == "repo" || scope == "contents") {
+                    if !scopes
+                        .iter()
+                        .any(|scope| scope == "repo" || scope == "contents")
+                    {
                         checks.push(CheckResult::Warn(
                             "GitHub token does not advertise a contents/repo scope".to_string(),
                         ));
@@ -387,7 +390,10 @@ fn check_build(config: &Option<Config>) -> Vec<CheckResult> {
     if config.publish.enabled {
         let provider = config.publish.provider.trim();
         let installed = match provider {
-            "uv" => Command::new("uv").arg("--version").output().is_ok_and(|o| o.status.success()),
+            "uv" => Command::new("uv")
+                .arg("--version")
+                .output()
+                .is_ok_and(|o| o.status.success()),
             "twine" => Command::new("twine")
                 .arg("--version")
                 .output()
@@ -459,7 +465,9 @@ fn check_pypi(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Chec
                     )));
                 }
 
-                if let (Some(version), Some(project_name)) = (parsed, detect_project_name(repo.path(), ".")) {
+                if let (Some(version), Some(project_name)) =
+                    (parsed, detect_project_name(repo.path(), "."))
+                {
                     match pypi::has_version(&project_name, &version) {
                         Ok(true) => checks.push(CheckResult::Fail(format!(
                             "Version {} is already published on PyPI",

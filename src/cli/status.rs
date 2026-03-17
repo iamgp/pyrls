@@ -47,16 +47,22 @@ pub fn run(cli: &Cli, args: &StatusArgs) -> Result<()> {
 }
 
 fn print_channel(repo: &GitRepository, config: &Config) {
-    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
-    let channel = config.channels.iter().find(|channel| channel.branch == branch);
+    let branch = repo
+        .current_branch()
+        .unwrap_or_else(|_| "unknown".to_string());
+    let channel = config
+        .channels
+        .iter()
+        .find(|channel| channel.branch == branch);
 
     match channel {
         Some(channel) => {
-            let prerelease = channel
-                .prerelease
-                .as_deref()
-                .unwrap_or("stable");
-            let publish = if channel.publish { "publish" } else { "no-publish" };
+            let prerelease = channel.prerelease.as_deref().unwrap_or("stable");
+            let publish = if channel.publish {
+                "publish"
+            } else {
+                "no-publish"
+            };
             if let Some(range) = &channel.version_range {
                 println!("{} {} {} {}", branch, prerelease, publish, range);
             } else {
@@ -136,8 +142,13 @@ fn print_legacy(cli: &Cli, repo: &GitRepository, analysis: &ReleaseAnalysis) -> 
 }
 
 fn print_json(repo: &GitRepository, config: &Config, analysis: &ReleaseAnalysis) -> Result<()> {
-    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
-    let channel = config.channels.iter().find(|channel| channel.branch == branch);
+    let branch = repo
+        .current_branch()
+        .unwrap_or_else(|_| "unknown".to_string());
+    let channel = config
+        .channels
+        .iter()
+        .find(|channel| channel.branch == branch);
     let github_status = fetch_github_status(repo, config, analysis).ok().flatten();
     let packages: Vec<serde_json::Value> = analysis
         .package_plan
@@ -195,12 +206,7 @@ fn print_json(repo: &GitRepository, config: &Config, analysis: &ReleaseAnalysis)
 fn print_short(analysis: &ReleaseAnalysis) {
     for pkg in &analysis.package_plan.packages {
         let version_info = match &pkg.next_version {
-            Some(next) => format!(
-                "{} → {} ({})",
-                pkg.current_version,
-                next,
-                pkg.bump.as_str()
-            ),
+            Some(next) => format!("{} → {} ({})", pkg.current_version, next, pkg.bump.as_str()),
             None => format!("{} → no change", pkg.current_version),
         };
 
@@ -229,7 +235,9 @@ fn print_dashboard(
     println!("{}", style("pyrls status").bold());
     println!();
 
-    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
+    let branch = repo
+        .current_branch()
+        .unwrap_or_else(|_| "unknown".to_string());
     let last_tag = repo.latest_tag().unwrap_or(None);
     let github_status = fetch_github_status(repo, config, analysis).ok().flatten();
 
@@ -276,7 +284,11 @@ fn print_package_section(
     _config: &Config,
     _args: &StatusArgs,
 ) {
-    println!(" {} {}", style("Package").cyan().bold(), style(&pkg.name).bold());
+    println!(
+        " {} {}",
+        style("Package").cyan().bold(),
+        style(&pkg.name).bold()
+    );
 
     match &pkg.next_version {
         Some(next) => {
@@ -301,7 +313,11 @@ fn print_package_section(
 
     match last_tag {
         Some(tag) => println!(" {} {}", style("Last release").cyan().bold(), tag),
-        None => println!(" {} {}", style("Last release").cyan().bold(), style("none").dim()),
+        None => println!(
+            " {} {}",
+            style("Last release").cyan().bold(),
+            style("none").dim()
+        ),
     }
 
     if pkg.commits.is_empty() {
@@ -357,21 +373,27 @@ fn print_package_section(
     // Table header
     println!(
         " ┌{:─<tw$}┬{:─<mw$}┬{:─<hw$}┐",
-        "", "", "",
+        "",
+        "",
+        "",
         tw = type_width + 2,
         mw = msg_width + 2,
         hw = hash_width + 2
     );
     println!(
         " │ {:<tw$} │ {:<mw$} │ {:<hw$} │",
-        "Type", "Message", "Hash",
+        "Type",
+        "Message",
+        "Hash",
         tw = type_width,
         mw = msg_width,
         hw = hash_width
     );
     println!(
         " ├{:─<tw$}┼{:─<mw$}┼{:─<hw$}┤",
-        "", "", "",
+        "",
+        "",
+        "",
         tw = type_width + 2,
         mw = msg_width + 2,
         hw = hash_width + 2
@@ -385,7 +407,9 @@ fn print_package_section(
         };
         println!(
             " │ {:<tw$} │ {:<mw$} │ {:<hw$} │",
-            commit_type, truncated_msg, hash,
+            commit_type,
+            truncated_msg,
+            hash,
             tw = type_width,
             mw = msg_width,
             hw = hash_width
@@ -394,7 +418,9 @@ fn print_package_section(
 
     println!(
         " └{:─<tw$}┴{:─<mw$}┴{:─<hw$}┘",
-        "", "", "",
+        "",
+        "",
+        "",
         tw = type_width + 2,
         mw = msg_width + 2,
         hw = hash_width + 2

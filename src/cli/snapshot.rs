@@ -4,14 +4,7 @@ use anyhow::{Context, Result};
 use console::style;
 use openssl::sha::sha256;
 
-use crate::{
-    analysis,
-    changelog,
-    cli::Cli,
-    config::Config,
-    git::GitRepository,
-    github, progress,
-};
+use crate::{analysis, changelog, cli::Cli, config::Config, git::GitRepository, github, progress};
 
 enum BuildResult {
     Passed,

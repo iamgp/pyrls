@@ -76,7 +76,10 @@ impl PendingChangelog {
         for (name, commit_count) in &counts {
             if changelog_config.exclude_bots {
                 let lower = name.to_lowercase();
-                if bot_patterns.iter().any(|p| lower.contains(&p.to_lowercase())) {
+                if bot_patterns
+                    .iter()
+                    .any(|p| lower.contains(&p.to_lowercase()))
+                {
                     continue;
                 }
             }
@@ -88,7 +91,11 @@ impl PendingChangelog {
             });
         }
 
-        contributors.sort_by(|a, b| b.commit_count.cmp(&a.commit_count).then(a.name.cmp(&b.name)));
+        contributors.sort_by(|a, b| {
+            b.commit_count
+                .cmp(&a.commit_count)
+                .then(a.name.cmp(&b.name))
+        });
         self.contributors = contributors;
     }
 

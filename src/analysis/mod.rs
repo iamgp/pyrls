@@ -109,10 +109,8 @@ fn analyze_single_package(
     let mut changelog = PendingChangelog::from_commits(config, &conventional_commits);
 
     if config.changelog.contributors {
-        let known_authors: std::collections::BTreeSet<String> = repo
-            .authors_before_latest_tag()?
-            .into_iter()
-            .collect();
+        let known_authors: std::collections::BTreeSet<String> =
+            repo.authors_before_latest_tag()?.into_iter().collect();
         let display_commits = resolve_contributor_identities(repo, config, &commits);
         changelog.add_contributors(&display_commits, &known_authors, &config.changelog);
     }
@@ -171,10 +169,8 @@ fn analyze_monorepo(
 
         let mut changelog = PendingChangelog::from_commits(config, &conventional_commits);
         if config.changelog.contributors {
-            let known_authors: std::collections::BTreeSet<String> = repo
-                .authors_before_latest_tag()?
-                .into_iter()
-                .collect();
+            let known_authors: std::collections::BTreeSet<String> =
+                repo.authors_before_latest_tag()?.into_iter().collect();
             let display_commits = resolve_contributor_identities(repo, config, &package_commits);
             changelog.add_contributors(&display_commits, &known_authors, &config.changelog);
         }
@@ -296,11 +292,7 @@ pub fn discover_uv_workspace(repo_root: &Path) -> Option<Vec<String>> {
             let entries = fs::read_dir(parent_dir).ok()?;
             for entry in entries.flatten() {
                 if entry.path().is_dir() {
-                    let rel = format!(
-                        "{}/{}",
-                        prefix,
-                        entry.file_name().to_string_lossy()
-                    );
+                    let rel = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
                     roots.push(rel);
                 }
             }
@@ -309,11 +301,7 @@ pub fn discover_uv_workspace(repo_root: &Path) -> Option<Vec<String>> {
             let entries = fs::read_dir(parent_dir).ok()?;
             for entry in entries.flatten() {
                 if entry.path().is_dir() {
-                    let rel = format!(
-                        "{}/{}",
-                        prefix,
-                        entry.file_name().to_string_lossy()
-                    );
+                    let rel = format!("{}/{}", prefix, entry.file_name().to_string_lossy());
                     roots.push(rel);
                 }
             }
@@ -328,11 +316,7 @@ pub fn discover_uv_workspace(repo_root: &Path) -> Option<Vec<String>> {
     roots.sort();
     roots.dedup();
 
-    if roots.is_empty() {
-        None
-    } else {
-        Some(roots)
-    }
+    if roots.is_empty() { None } else { Some(roots) }
 }
 
 pub fn extract_dependency_names(repo_root: &Path, package_root: &str) -> Vec<String> {
@@ -671,13 +655,19 @@ fn aggregate_changelog(packages: &[PackageReleaseAnalysis]) -> PendingChangelog 
     }
     let mut contributors: Vec<crate::changelog::ContributorInfo> = contributor_map
         .into_iter()
-        .map(|(name, (commit_count, first_contribution))| crate::changelog::ContributorInfo {
-            name,
-            commit_count,
-            first_contribution,
-        })
+        .map(
+            |(name, (commit_count, first_contribution))| crate::changelog::ContributorInfo {
+                name,
+                commit_count,
+                first_contribution,
+            },
+        )
         .collect();
-    contributors.sort_by(|a, b| b.commit_count.cmp(&a.commit_count).then(a.name.cmp(&b.name)));
+    contributors.sort_by(|a, b| {
+        b.commit_count
+            .cmp(&a.commit_count)
+            .then(a.name.cmp(&b.name))
+    });
     PendingChangelog {
         sections,
         contributors,

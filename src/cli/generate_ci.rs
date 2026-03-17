@@ -105,7 +105,10 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
     yaml.push_str("  id-token: write\n");
     yaml.push_str("\n");
     yaml.push_str("jobs:\n");
-    if config.monorepo.enabled && config.monorepo.release_mode == "per_package" && !config.monorepo.packages.is_empty() {
+    if config.monorepo.enabled
+        && config.monorepo.release_mode == "per_package"
+        && !config.monorepo.packages.is_empty()
+    {
         for package in &config.monorepo.packages {
             let job_name = package.replace(['/', '.'], "-");
             yaml.push_str(&format!("  release-pr-{}:\n", job_name));
@@ -117,7 +120,10 @@ fn generate_github_workflow(config: &Config, build_backend: &str) -> String {
             yaml.push_str("\n");
             yaml.push_str("      - uses: pyrls/action@v1\n");
             yaml.push_str("        with:\n");
-            yaml.push_str(&format!("          command: release pr --channel {}\n", branch));
+            yaml.push_str(&format!(
+                "          command: release pr --channel {}\n",
+                branch
+            ));
             yaml.push_str("        env:\n");
             yaml.push_str("          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n");
         }

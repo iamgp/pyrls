@@ -99,11 +99,7 @@ impl GitRepository {
                 id: oid.to_string(),
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
-                author: commit
-                    .author()
-                    .name()
-                    .unwrap_or("unknown")
-                    .to_string(),
+                author: commit.author().name().unwrap_or("unknown").to_string(),
             });
         }
 
@@ -134,11 +130,7 @@ impl GitRepository {
                 id: oid.to_string(),
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
-                author: commit
-                    .author()
-                    .name()
-                    .unwrap_or("unknown")
-                    .to_string(),
+                author: commit.author().name().unwrap_or("unknown").to_string(),
             });
         }
 

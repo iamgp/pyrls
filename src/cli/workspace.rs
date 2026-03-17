@@ -21,11 +21,7 @@ pub fn run(cli: &Cli) -> Result<()> {
         style("Workspace root:").cyan().bold(),
         "pyproject.toml"
     );
-    println!(
-        " {} {}",
-        style("Discovery:").cyan().bold(),
-        source
-    );
+    println!(" {} {}", style("Discovery:").cyan().bold(), source);
 
     if member_roots.is_empty() {
         println!();
@@ -76,8 +72,10 @@ pub fn run(cli: &Cli) -> Result<()> {
             style(dep_suffix).dim()
         );
     }
-    let known_versions: std::collections::BTreeSet<&str> =
-        members.iter().map(|member| member.version.as_str()).collect();
+    let known_versions: std::collections::BTreeSet<&str> = members
+        .iter()
+        .map(|member| member.version.as_str())
+        .collect();
     if known_versions.len() > 1 {
         println!();
         println!(
@@ -128,7 +126,7 @@ fn detect_name(repo_root: &std::path::Path, package_root: &str) -> String {
                 .rsplit('/')
                 .next()
                 .unwrap_or(package_root)
-                .to_string()
+                .to_string();
         }
     };
     let parsed = match contents.parse::<toml::Table>() {
@@ -138,7 +136,7 @@ fn detect_name(repo_root: &std::path::Path, package_root: &str) -> String {
                 .rsplit('/')
                 .next()
                 .unwrap_or(package_root)
-                .to_string()
+                .to_string();
         }
     };
 

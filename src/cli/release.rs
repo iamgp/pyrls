@@ -6,8 +6,7 @@ use crate::{
     cli::{Cli, PreReleaseArgs, PreReleaseKind, ReleaseCommand, ReleaseSubcommand},
     config::{ChannelConfig, Config},
     git::GitRepository,
-    github, progress, publish,
-    pypi,
+    github, progress, publish, pypi,
     version::{BumpLevel, Version},
 };
 
@@ -63,9 +62,7 @@ fn resolve_channel<'a>(
             || channel.prerelease.as_deref() == Some(wanted)
             || matches!(
                 (channel.prerelease.as_deref(), wanted),
-                (Some("a"), "alpha")
-                    | (Some("b"), "beta")
-                    | (Some("rc"), "rc")
+                (Some("a"), "alpha") | (Some("b"), "beta") | (Some("rc"), "rc")
             )
     })
 }
@@ -74,30 +71,53 @@ fn version_in_range(version: &Version, range: &str) -> bool {
     range.split(',').all(|raw| {
         let clause = raw.trim();
         if let Some(min) = clause.strip_prefix(">=") {
-            return min.parse::<Version>().map(|v| version >= &v).unwrap_or(false);
+            return min
+                .parse::<Version>()
+                .map(|v| version >= &v)
+                .unwrap_or(false);
         }
         if let Some(max) = clause.strip_prefix("<=") {
-            return max.parse::<Version>().map(|v| version <= &v).unwrap_or(false);
+            return max
+                .parse::<Version>()
+                .map(|v| version <= &v)
+                .unwrap_or(false);
         }
         if let Some(min) = clause.strip_prefix('>') {
-            return min.parse::<Version>().map(|v| version > &v).unwrap_or(false);
+            return min
+                .parse::<Version>()
+                .map(|v| version > &v)
+                .unwrap_or(false);
         }
         if let Some(max) = clause.strip_prefix('<') {
-            return max.parse::<Version>().map(|v| version < &v).unwrap_or(false);
+            return max
+                .parse::<Version>()
+                .map(|v| version < &v)
+                .unwrap_or(false);
         }
         if let Some(exact) = clause.strip_prefix("==") {
-            return exact.parse::<Version>().map(|v| version == &v).unwrap_or(false);
+            return exact
+                .parse::<Version>()
+                .map(|v| version == &v)
+                .unwrap_or(false);
         }
         false
     })
 }
 
-fn enforce_channel_range(analysis: &analysis::ReleaseAnalysis, channel: &ChannelConfig) -> Result<()> {
+fn enforce_channel_range(
+    analysis: &analysis::ReleaseAnalysis,
+    channel: &ChannelConfig,
+) -> Result<()> {
     let Some(range) = channel.version_range.as_deref() else {
         return Ok(());
     };
 
-    for package in analysis.package_plan.packages.iter().filter(|pkg| pkg.selected) {
+    for package in analysis
+        .package_plan
+        .packages
+        .iter()
+        .filter(|pkg| pkg.selected)
+    {
         if let Some(next) = &package.next_version
             && !version_in_range(next, range)
         {
@@ -113,7 +133,11 @@ fn enforce_channel_range(analysis: &analysis::ReleaseAnalysis, channel: &Channel
     if let Some(next) = &analysis.next_version
         && !version_in_range(next, range)
     {
-        anyhow::bail!("next version {} is outside configured channel range {}", next, range);
+        anyhow::bail!(
+            "next version {} is outside configured channel range {}",
+            next,
+            range
+        );
     }
 
     Ok(())
@@ -125,7 +149,9 @@ fn apply_channel_override(
     analysis: &mut analysis::ReleaseAnalysis,
     args: &PreReleaseArgs,
 ) -> Result<()> {
-    let branch = repo.current_branch().unwrap_or_else(|_| "unknown".to_string());
+    let branch = repo
+        .current_branch()
+        .unwrap_or_else(|_| "unknown".to_string());
     let Some(channel) = resolve_channel(config, &branch, args.channel.as_deref()) else {
         return Ok(());
     };

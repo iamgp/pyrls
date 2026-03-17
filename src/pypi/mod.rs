@@ -43,7 +43,11 @@ pub fn has_version(project_name: &str, version: &Version) -> Result<bool> {
     Ok(response.releases.contains_key(&version.to_string()))
 }
 
-pub fn next_prerelease_version(project_name: &str, base_version: &Version, kind: &str) -> Result<Version> {
+pub fn next_prerelease_version(
+    project_name: &str,
+    base_version: &Version,
+    kind: &str,
+) -> Result<Version> {
     let response = fetch_project(project_name)?;
     let prefix = format!("{}{}", base_version.base(), kind);
     let mut max_n = 0;
@@ -53,9 +57,21 @@ pub fn next_prerelease_version(project_name: &str, base_version: &Version, kind:
         }
         if let Ok(version) = release.parse::<Version>() {
             let current = match version.suffix {
-                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Alpha(n))) if kind == "a" => n,
-                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Beta(n))) if kind == "b" => n,
-                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Rc(n))) if kind == "rc" => n,
+                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Alpha(n)))
+                    if kind == "a" =>
+                {
+                    n
+                }
+                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Beta(n)))
+                    if kind == "b" =>
+                {
+                    n
+                }
+                Some(crate::version::Suffix::Pre(crate::version::PreRelease::Rc(n)))
+                    if kind == "rc" =>
+                {
+                    n
+                }
                 _ => continue,
             };
             max_n = max_n.max(current);
@@ -74,7 +90,11 @@ fn fetch_project(project_name: &str) -> Result<PypiResponse> {
 }
 
 fn fetch_project_from_base(base_url: &str, project_name: &str) -> Result<PypiResponse> {
-    let url = format!("{}/pypi/{}/json", base_url.trim_end_matches('/'), project_name);
+    let url = format!(
+        "{}/pypi/{}/json",
+        base_url.trim_end_matches('/'),
+        project_name
+    );
     let response = ureq::get(&url)
         .set("User-Agent", "pyrls")
         .call()
