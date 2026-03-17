@@ -51,6 +51,16 @@ impl fmt::Display for PreRelease {
     }
 }
 
+impl PreRelease {
+    pub fn to_semver_string(&self) -> String {
+        match self {
+            Self::Alpha(n) => format!("alpha.{n}"),
+            Self::Beta(n) => format!("beta.{n}"),
+            Self::Rc(n) => format!("rc.{n}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Suffix {
     Pre(PreRelease),
@@ -241,6 +251,26 @@ impl Version {
     pub fn finalize(&self) -> Self {
         self.base()
     }
+
+    pub fn to_pep440_string(&self) -> String {
+        let mut rendered = format!("{}.{}.{}", self.major, self.minor, self.patch);
+        if let Some(suffix) = &self.suffix {
+            rendered.push_str(&suffix.to_string());
+        }
+        rendered
+    }
+
+    pub fn to_semver_string(&self) -> String {
+        let mut rendered = format!("{}.{}.{}", self.major, self.minor, self.patch);
+        if let Some(suffix) = &self.suffix {
+            match suffix {
+                Suffix::Pre(pre) => rendered.push_str(&format!("-{}", pre.to_semver_string())),
+                Suffix::Post(n) => rendered.push_str(&format!("-post.{n}")),
+                Suffix::Dev(n) => rendered.push_str(&format!("-dev.{n}")),
+            }
+        }
+        rendered
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -291,11 +321,7 @@ impl BumpLevel {
 
 impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)?;
-        if let Some(suffix) = &self.suffix {
-            write!(f, "{suffix}")?;
-        }
-        Ok(())
+        write!(f, "{}", self.to_pep440_string())
     }
 }
 
@@ -319,6 +345,17 @@ impl FromStr for Version {
 }
 
 fn parse_suffix(value: &str) -> (&str, Option<Suffix>) {
+    for (marker, constructor) in [
+        ("-alpha.", PreRelease::Alpha as fn(u64) -> PreRelease),
+        ("-beta.", PreRelease::Beta as fn(u64) -> PreRelease),
+        ("-rc.", PreRelease::Rc as fn(u64) -> PreRelease),
+    ] {
+        if let Some((base, n)) = value.rsplit_once(marker)
+            && let Ok(n) = n.parse::<u64>()
+        {
+            return (base, Some(Suffix::Pre(constructor(n))));
+        }
+    }
     if let Some((base, n)) = value.rsplit_once(".post")
         && let Ok(n) = n.parse::<u64>()
     {
@@ -405,6 +442,13 @@ mod tests {
     }
 
     #[test]
+    fn parses_semver_beta_version() {
+        let v = Version::from_str("1.2.3-beta.2").expect("parse");
+        assert_eq!(v.suffix, Some(Suffix::Pre(PreRelease::Beta(2))));
+        assert_eq!(v.to_semver_string(), "1.2.3-beta.2");
+    }
+
+    #[test]
     fn parses_post_version() {
         let v = Version::from_str("1.2.3.post1").expect("parse");
         assert_eq!(v.suffix, Some(Suffix::Post(1)));
@@ -464,6 +508,12 @@ mod tests {
     fn bump_dev_increments() {
         let v = Version::from_str("1.2.3.dev1").expect("parse");
         assert_eq!(v.bump_dev().to_string(), "1.2.3.dev2");
+    }
+
+    #[test]
+    fn renders_semver_pre_release() {
+        let v = Version::from_str("1.2.3b2").expect("parse");
+        assert_eq!(v.to_semver_string(), "1.2.3-beta.2");
     }
 
     #[test]

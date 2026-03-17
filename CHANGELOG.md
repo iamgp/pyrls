@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.0b1] - 2026-03-17
+## [0.4.0-beta.1] - 2026-03-17
 
 ### Added
 - add ecosystem-aware project detection
