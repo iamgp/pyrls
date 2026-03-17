@@ -118,7 +118,7 @@ fn workspace_reports_go_work_members() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Workspace root: go.mod"), "{stdout}");
+    assert!(stdout.contains("Workspace root: go.work"), "{stdout}");
     assert!(
         stdout.contains("Discovery: go workspace (go.work use)"),
         "{stdout}"

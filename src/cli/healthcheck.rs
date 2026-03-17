@@ -5,6 +5,7 @@ use console::style;
 
 use crate::{
     analysis::{detect_project_name, read_current_version},
+    channels,
     config::{Config, Ecosystem},
     cratesio, ecosystem,
     git::{GitRepository, run_git},
@@ -241,8 +242,8 @@ fn check_git(config: &Option<Config>, repo: &Option<GitRepository>) -> Vec<Check
         Ok(branch) => {
             let expected = config
                 .as_ref()
-                .map(|c| c.release.branch.as_str())
-                .unwrap_or("main");
+                .map(|c| channels::release_base_branch(c, &branch))
+                .unwrap_or_else(|| "main".to_string());
             if branch == expected {
                 checks.push(CheckResult::Pass(format!("On branch {}", branch)));
             } else {

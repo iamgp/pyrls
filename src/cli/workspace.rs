@@ -24,7 +24,7 @@ pub fn run(cli: &Cli) -> Result<()> {
     println!(
         " {} {}",
         style("Workspace root:").cyan().bold(),
-        ecosystem::manifest_name(active_ecosystem)
+        workspace_root_name(&repo_root, active_ecosystem)
     );
     println!(" {} {}", style("Discovery:").cyan().bold(), source);
 
@@ -91,6 +91,13 @@ pub fn run(cli: &Cli) -> Result<()> {
     println!();
 
     Ok(())
+}
+
+fn workspace_root_name(repo_root: &std::path::Path, ecosystem: Ecosystem) -> &'static str {
+    match ecosystem {
+        Ecosystem::Go if repo_root.join("go.work").exists() => "go.work",
+        _ => ecosystem::manifest_name(ecosystem),
+    }
 }
 
 struct MemberInfo {
