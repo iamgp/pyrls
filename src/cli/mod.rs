@@ -30,9 +30,19 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Init,
-    Status,
+    Status(StatusArgs),
     Validate,
     Release(ReleaseCommand),
+}
+
+#[derive(Debug, Args)]
+pub struct StatusArgs {
+    #[arg(long)]
+    pub short: bool,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long, value_name = "TAG")]
+    pub since: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -82,7 +92,7 @@ pub fn run() -> Result<()> {
 
     match &cli.command {
         Command::Init => init::run(&cli),
-        Command::Status => status::run(&cli),
+        Command::Status(args) => status::run(&cli, args),
         Command::Validate => validate::run(&cli),
         Command::Release(cmd) => release::run(&cli, cmd),
     }

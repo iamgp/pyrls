@@ -70,6 +70,21 @@ pub fn analyze(repo: &GitRepository, config: &Config) -> Result<ReleaseAnalysis>
     }
 }
 
+pub fn analyze_since(
+    repo: &GitRepository,
+    config: &Config,
+    since_tag: &str,
+) -> Result<ReleaseAnalysis> {
+    config.validate()?;
+
+    let commits = repo.commits_since_tag(since_tag)?;
+    if config.monorepo.is_multi_package() {
+        analyze_monorepo(repo, config, commits)
+    } else {
+        analyze_single_package(repo, config, commits)
+    }
+}
+
 fn analyze_single_package(
     repo: &GitRepository,
     config: &Config,

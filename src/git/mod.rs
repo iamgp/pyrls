@@ -105,6 +105,36 @@ impl GitRepository {
         Ok(commits)
     }
 
+    pub fn commits_since_tag(&self, tag: &str) -> Result<Vec<CommitSummary>> {
+        let head = self.inner.head()?.peel_to_commit()?;
+        let tag_object = self
+            .inner
+            .revparse_single(tag)
+            .with_context(|| format!("tag '{}' not found", tag))?;
+        let tag_commit = tag_object
+            .peel_to_commit()
+            .with_context(|| format!("tag '{}' does not point to a commit", tag))?;
+
+        let mut revwalk = self.inner.revwalk().context("failed to create revwalk")?;
+        revwalk.push(head.id())?;
+        revwalk.hide(tag_commit.id())?;
+
+        let mut commits = Vec::new();
+        for oid in revwalk {
+            let oid = oid?;
+            let commit = self.inner.find_commit(oid)?;
+            let changed_paths = changed_paths_for_commit(&self.inner, &commit)?;
+            commits.push(CommitSummary {
+                id: oid.to_string(),
+                message: commit.message().unwrap_or_default().trim().to_string(),
+                changed_paths,
+            });
+        }
+
+        commits.reverse();
+        Ok(commits)
+    }
+
     pub fn remote_url(&self, name: &str) -> Result<Option<String>> {
         match self.inner.find_remote(name) {
             Ok(remote) => Ok(remote.url().map(str::to_string)),
