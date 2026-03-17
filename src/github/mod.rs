@@ -9,6 +9,7 @@ use crate::{
     analysis::{self, ReleaseAnalysis},
     changelog, channels,
     config::{Config, GitHubConfig},
+    ecosystem,
     git::{GitRepository, run_git},
 };
 
@@ -52,11 +53,12 @@ pub fn build_release_pr_plan(
     analysis: &ReleaseAnalysis,
     current_branch: &str,
 ) -> Result<ReleasePrPlan> {
+    let ecosystem = ecosystem::config_ecosystem(config);
     let release_label = release_label(analysis)?;
     let version = analysis
         .next_version
         .as_ref()
-        .map(ToString::to_string)
+        .map(|version| ecosystem::format_version(version, ecosystem))
         .unwrap_or_else(|| release_label.clone());
     let title = if config.monorepo.enabled {
         monorepo_pr_title(config, analysis)?
@@ -72,8 +74,13 @@ pub fn build_release_pr_plan(
         release_branch_suffix(analysis)?
     );
     let date = today_utc();
+    let release_heading = if analysis.package_plan.release_mode == "single" {
+        version.clone()
+    } else {
+        release_label.clone()
+    };
     let release_notes = changelog::render_release_notes(
-        &release_label,
+        &release_heading,
         &date,
         &analysis.changelog,
         &config.changelog.first_contribution_emoji,
@@ -98,11 +105,12 @@ pub fn build_release_tag_plan(
     repo: &GitRepository,
     analysis: &ReleaseAnalysis,
 ) -> Result<ReleaseTagPlan> {
+    let ecosystem = ecosystem::config_ecosystem(config);
     let release_label = release_label(analysis)?;
     let version = analysis
         .next_version
         .as_ref()
-        .map(ToString::to_string)
+        .map(|version| ecosystem::format_version(version, ecosystem))
         .unwrap_or_else(|| release_label.clone());
     let tag_name = if config.monorepo.enabled {
         format!(
@@ -677,7 +685,7 @@ fn release_label(analysis: &ReleaseAnalysis) -> Result<String> {
             .next_version
             .as_ref()
             .context("no release is pending from the current commit set")?
-            .to_string());
+            .to_pep440_string());
     }
 
     let selected = selected_package_summaries(analysis);

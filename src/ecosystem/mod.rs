@@ -1,6 +1,9 @@
 use std::{fs, path::Path};
 
-use crate::config::{Config, Ecosystem, VersionFileConfig};
+use crate::{
+    config::{Config, Ecosystem, VersionFileConfig},
+    version::Version,
+};
 
 pub fn detect(repo_root: &Path, config: Option<&Config>) -> Ecosystem {
     if let Some(ecosystem) = config.and_then(|cfg| cfg.project.ecosystem) {
@@ -16,6 +19,18 @@ pub fn detect(repo_root: &Path, config: Option<&Config>) -> Ecosystem {
     }
 
     Ecosystem::Python
+}
+
+pub fn config_ecosystem(config: &Config) -> Ecosystem {
+    config.project.ecosystem.unwrap_or(Ecosystem::Python)
+}
+
+pub fn format_version(version: &Version, ecosystem: Ecosystem) -> String {
+    match ecosystem {
+        Ecosystem::Python => version.to_pep440_string(),
+        Ecosystem::Rust => version.to_semver_string(),
+        Ecosystem::Go => version.to_semver_string(),
+    }
 }
 
 pub fn manifest_name(ecosystem: Ecosystem) -> &'static str {

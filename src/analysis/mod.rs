@@ -979,15 +979,21 @@ pub fn update_version_files(
 ) -> Result<()> {
     for version_file in version_files {
         let path = repo_root.join(&version_file.path);
+        let ecosystem = if path.file_name().and_then(|name| name.to_str()) == Some("Cargo.toml") {
+            Ecosystem::Rust
+        } else {
+            ecosystem::detect(path.parent().unwrap_or(repo_root), None)
+        };
+        let rendered_version = ecosystem::format_version(version, ecosystem);
 
         if let Some(key) = &version_file.key {
-            version_files::rewrite_key(&path, key, &version.to_string())
+            version_files::rewrite_key(&path, key, &rendered_version)
                 .with_context(|| format!("failed to update {}", path.display()))?;
             continue;
         }
 
         if let Some(pattern) = &version_file.pattern {
-            version_files::rewrite_pattern(&path, pattern, &version.to_string())
+            version_files::rewrite_pattern(&path, pattern, &rendered_version)
                 .with_context(|| format!("failed to update {}", path.display()))?;
             continue;
         }
