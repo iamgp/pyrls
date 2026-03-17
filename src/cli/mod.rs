@@ -1,3 +1,4 @@
+pub mod generate_ci;
 pub mod healthcheck;
 pub mod init;
 pub mod release;
@@ -38,6 +39,7 @@ pub enum Command {
     Healthcheck(HealthcheckArgs),
     Release(ReleaseCommand),
     Workspace,
+    GenerateCi(GenerateCiArgs),
 }
 
 #[derive(Debug, Args)]
@@ -69,6 +71,12 @@ pub enum ReleaseSubcommand {
     Pr(PreReleaseArgs),
     Tag(PreReleaseArgs),
     Publish,
+}
+
+#[derive(Debug, Args)]
+pub struct GenerateCiArgs {
+    #[arg(long, value_name = "PROVIDER")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -110,5 +118,6 @@ pub fn run() -> Result<()> {
         Command::Healthcheck(args) => healthcheck::run(&cli, args),
         Command::Release(cmd) => release::run(&cli, cmd),
         Command::Workspace => workspace::run(&cli),
+        Command::GenerateCi(args) => generate_ci::run(&cli, args),
     }
 }

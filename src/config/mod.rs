@@ -21,6 +21,8 @@ pub struct Config {
     pub github: GitHubConfig,
     #[serde(default)]
     pub workspace: WorkspaceConfig,
+    #[serde(default)]
+    pub ci: CiConfig,
 }
 
 impl Config {
@@ -364,6 +366,31 @@ fn default_tagged_label() -> String {
 pub struct WorkspaceConfig {
     #[serde(default)]
     pub cascade_bumps: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CiConfig {
+    #[serde(default = "default_ci_provider")]
+    pub provider: String,
+    #[serde(default = "default_ci_workflow_path")]
+    pub workflow_path: String,
+}
+
+impl Default for CiConfig {
+    fn default() -> Self {
+        Self {
+            provider: default_ci_provider(),
+            workflow_path: default_ci_workflow_path(),
+        }
+    }
+}
+
+fn default_ci_provider() -> String {
+    "github".to_string()
+}
+
+fn default_ci_workflow_path() -> String {
+    ".github/workflows/release.yml".to_string()
 }
 
 fn default_contributors_enabled() -> bool {
