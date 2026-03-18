@@ -72,7 +72,12 @@ On the `beta` branch, `relx` will:
 
 - preview `next_version` as a beta version in `status`
 - target `beta` as the release PR base branch
-- generate tags like `v1.2.3b1`
+- generate branch and tag names using the active ecosystem's version format
+
+For example:
+
+- Python: `v1.2.3b1`
+- Rust and Go: `v1.2.3-beta.1`
 
 ### Maintenance branch guard
 
@@ -94,8 +99,8 @@ If the active package registry is reachable and a package name can be resolved, 
 - `1.2.3b3`
 
 - Python uses PyPI history.
-- Rust uses crates.io history.
-- Go currently falls back to local version bumping.
+- Rust uses crates.io history and renders prereleases as semver like `1.2.3-beta.1`.
+- Go currently falls back to local version bumping and also uses semver rendering.
 
 If the registry cannot be queried, `relx` falls back to local version bumping.
 
