@@ -134,6 +134,8 @@ token_env = "GITHUB_TOKEN"             # env var to read the token from
 release_branch_prefix = "relx/release" # branch name prefix for release PRs
 pending_label = "autorelease: pending"  # label applied to open release PRs
 tagged_label = "autorelease: tagged"    # label applied after tagging
+commit_author = "github-actions[bot]"   # git author for bot-created release commits
+commit_email = "41898282+github-actions[bot]@users.noreply.github.com"
 
 # ── Monorepo ─────────────────────────────────────────────────────
 [monorepo]

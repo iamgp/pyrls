@@ -20,6 +20,18 @@ fn authenticated_url(origin_url: &str, token: &str) -> String {
     }
 }
 
+fn release_commit_args(config: &Config, message: &str) -> Vec<String> {
+    vec![
+        "-c".to_string(),
+        format!("user.name={}", config.github.commit_author),
+        "-c".to_string(),
+        format!("user.email={}", config.github.commit_email),
+        "commit".to_string(),
+        "-m".to_string(),
+        message.to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoRef {
     pub owner: String,
@@ -207,15 +219,7 @@ pub fn execute_release_pr(
 
     run_git(
         &clone_path,
-        [
-            "-c",
-            "user.name=relx",
-            "-c",
-            "user.email=relx@users.noreply.github.com",
-            "commit",
-            "-m",
-            plan.title.as_str(),
-        ],
+        release_commit_args(config, plan.title.as_str()),
     )?;
     run_git(
         &clone_path,
@@ -327,15 +331,7 @@ fn execute_monorepo_unified_pr(
 
     run_git(
         &clone_path,
-        [
-            "-c",
-            "user.name=relx",
-            "-c",
-            "user.email=relx@users.noreply.github.com",
-            "commit",
-            "-m",
-            plan.title.as_str(),
-        ],
+        release_commit_args(config, plan.title.as_str()),
     )?;
     run_git(
         &clone_path,
@@ -430,15 +426,7 @@ fn execute_monorepo_per_package_pr(
 
     run_git(
         &clone_path,
-        [
-            "-c",
-            "user.name=relx",
-            "-c",
-            "user.email=relx@users.noreply.github.com",
-            "commit",
-            "-m",
-            plan.title.as_str(),
-        ],
+        release_commit_args(config, plan.title.as_str()),
     )?;
     run_git(
         &clone_path,
