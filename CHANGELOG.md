@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0] - 2026-03-18
+
+### Added
+- add auto-tag workflow and expand test coverage (#9)
+- stabilise for 1.0 release (#12)
+
+### Breaking Changes
+- stabilise for 1.0 release (#12)
+
+### Changed
+- re-trigger autorelease after v0.4.0 binaries published
+- fix placeholder URLs, add badges, expand tests and docs for 1.0 readiness
+- cargo fmt
+- v1.0.0 (#13)
+
+### Fixed
+- use correct action reference in generate-ci output (#11)
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (6 commits)
+
 ## [1.0.0] - 2026-03-18
 
 ### Added
