@@ -60,6 +60,8 @@ token_env = "GITHUB_TOKEN"
 release_branch_prefix = "relx/release"
 pending_label = "autorelease: pending"
 tagged_label = "autorelease: tagged"
+commit_author = "github-actions[bot]"
+commit_email = "41898282+github-actions[bot]@users.noreply.github.com"
 
 [monorepo]
 enabled = false
@@ -161,6 +163,7 @@ Examples:
 - `token_env`: environment variable holding the GitHub API token
 - `release_branch_prefix`: prefix for generated release branches
 - `pending_label`, `tagged_label`: labels managed by `relx`
+- `commit_author`, `commit_email`: git identity used for bot-created release commits
 
 ## `[monorepo]`
 

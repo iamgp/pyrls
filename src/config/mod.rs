@@ -307,6 +307,10 @@ pub struct GitHubConfig {
     pub pending_label: String,
     #[serde(default = "default_tagged_label")]
     pub tagged_label: String,
+    #[serde(default = "default_commit_author")]
+    pub commit_author: String,
+    #[serde(default = "default_commit_email")]
+    pub commit_email: String,
 }
 
 impl Default for GitHubConfig {
@@ -319,6 +323,8 @@ impl Default for GitHubConfig {
             release_branch_prefix: default_release_branch_prefix(),
             pending_label: default_pending_label(),
             tagged_label: default_tagged_label(),
+            commit_author: default_commit_author(),
+            commit_email: default_commit_email(),
         }
     }
 }
@@ -400,6 +406,14 @@ fn default_pending_label() -> String {
 
 fn default_tagged_label() -> String {
     "autorelease: tagged".to_string()
+}
+
+fn default_commit_author() -> String {
+    "github-actions[bot]".to_string()
+}
+
+fn default_commit_email() -> String {
+    "41898282+github-actions[bot]@users.noreply.github.com".to_string()
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -501,5 +515,29 @@ mod tests {
         };
 
         config.validate().expect("validation should pass");
+    }
+
+    #[test]
+    fn github_config_defaults_release_commit_identity() {
+        let config: Config = toml::from_str("").expect("default config");
+        assert_eq!(config.github.commit_author, "github-actions[bot]");
+        assert_eq!(
+            config.github.commit_email,
+            "41898282+github-actions[bot]@users.noreply.github.com"
+        );
+    }
+
+    #[test]
+    fn github_config_allows_custom_release_commit_identity() {
+        let config: Config = toml::from_str(
+            r#"
+            [github]
+            commit_author = "release-bot"
+            commit_email = "release-bot@example.com"
+            "#,
+        )
+        .expect("config");
+        assert_eq!(config.github.commit_author, "release-bot");
+        assert_eq!(config.github.commit_email, "release-bot@example.com");
     }
 }
