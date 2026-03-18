@@ -72,7 +72,7 @@ pub fn build_release_pr_plan(
     let branch = format!(
         "{}/{}",
         config.github.release_branch_prefix.trim_end_matches('/'),
-        release_branch_suffix(analysis)?
+        release_branch_suffix(config, analysis)?
     );
     let date = today_utc();
     let release_heading = if analysis.package_plan.release_mode == "single" {
@@ -702,14 +702,16 @@ fn release_label(analysis: &ReleaseAnalysis) -> Result<String> {
     Ok(selected.join(", "))
 }
 
-fn release_branch_suffix(analysis: &ReleaseAnalysis) -> Result<String> {
+fn release_branch_suffix(config: &Config, analysis: &ReleaseAnalysis) -> Result<String> {
     if analysis.package_plan.release_mode == "single" {
+        let ecosystem = ecosystem::config_ecosystem(config);
+        let version = analysis
+            .next_version
+            .as_ref()
+            .context("no release is pending from the current commit set")?;
         return Ok(format!(
             "v{}",
-            analysis
-                .next_version
-                .as_ref()
-                .context("no release is pending from the current commit set")?
+            ecosystem::format_version(version, ecosystem)
         ));
     }
 
@@ -1095,6 +1097,34 @@ mod tests {
         assert_eq!(plan.branch, "relx/release/v1.2.0");
         assert!(plan.title.contains("v1.2.0"));
         assert!(plan.body.contains("Release summary"));
+    }
+
+    #[test]
+    fn builds_rust_pr_branch_with_semver_prerelease() {
+        let config: Config = toml::from_str(
+            r#"
+            [project]
+            ecosystem = "rust"
+
+            [[version_files]]
+            path = "Cargo.toml"
+            key = "package.version"
+            "#,
+        )
+        .expect("config");
+        let mut analysis = sample_analysis();
+        analysis.next_version = Some(Version {
+            major: 1,
+            minor: 2,
+            patch: 0,
+            suffix: Some(crate::version::Suffix::Pre(
+                crate::version::PreRelease::Beta(2),
+            )),
+        });
+
+        let plan = build_release_pr_plan(&config, &analysis, "beta").expect("plan");
+        assert_eq!(plan.branch, "relx/release/v1.2.0-beta.2");
+        assert!(plan.title.contains("v1.2.0-beta.2"));
     }
 
     #[test]
