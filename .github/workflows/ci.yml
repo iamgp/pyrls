@@ -28,7 +28,9 @@ jobs:
         with:
           shared-key: ci-rust-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/beta' }}
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
       - name: Check formatting
         run: cargo fmt --check

@@ -31,7 +31,9 @@ jobs:
         with:
           shared-key: autorelease-rust-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/beta' }}
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
 
       - name: Inspect release status
         id: status
