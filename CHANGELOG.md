@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.3] - 2026-03-26
+
+### Changed
+- v1.0.1 (#17)
+- v1.0.2 (#22)
+
+### Fixed
+- sync lockfile after 1.0.0 release (#16)
+- prevent release PR loop and regenerate lockfiles on release (#19)
+- sync lockfile after version bump (#20)
+- bound unified monorepo release refs (#21)
+- clean up release automation (#23)
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (5 commits)
+
 ## [1.0.2] - 2026-03-26
 
 ### Changed
