@@ -129,12 +129,17 @@ fn sync_cargo_lock_package_versions(
         let mut name: Option<String> = None;
         let mut version_index: Option<usize> = None;
         let mut has_source = false;
-        for line_index in (block_start + 1)..block_end {
-            if let Some(value) = lines[line_index].strip_prefix("name = ") {
+        for (line_index, line) in lines
+            .iter()
+            .enumerate()
+            .take(block_end)
+            .skip(block_start + 1)
+        {
+            if let Some(value) = line.strip_prefix("name = ") {
                 name = Some(value.trim_matches('"').to_string());
-            } else if lines[line_index].starts_with("version = ") {
+            } else if line.starts_with("version = ") {
                 version_index = Some(line_index);
-            } else if lines[line_index].starts_with("source = ") {
+            } else if line.starts_with("source = ") {
                 has_source = true;
             }
         }
