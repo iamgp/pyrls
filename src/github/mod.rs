@@ -1,6 +1,7 @@
 use std::{env, path::Path};
 
 use anyhow::{Context, Result, bail};
+use openssl::sha::sha256;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tempfile::tempdir;
@@ -148,11 +149,7 @@ pub fn build_release_tag_plan(
         .map(ToString::to_string)
         .unwrap_or_else(|| release_label.clone());
     let tag_name = if config.monorepo.enabled {
-        format!(
-            "{}{}",
-            config.release.tag_prefix,
-            sanitize_label(&release_label)
-        )
+        format!("{}{}", config.release.tag_prefix, monorepo_release_slug(analysis)?)
     } else {
         format!("{}{}", config.release.tag_prefix, version)
     };
@@ -726,13 +723,31 @@ fn release_branch_suffix(analysis: &ReleaseAnalysis) -> Result<String> {
     }
 
     if analysis.package_plan.release_mode == "unified" {
-        return Ok(format!(
-            "monorepo/{}",
-            sanitize_label(&selected_package_summaries(analysis).join("-"))
-        ));
+        return Ok(format!("monorepo/{}", monorepo_release_slug(analysis)?));
     }
 
     Ok(format!("per-package/{}", selected.len()))
+}
+
+fn monorepo_release_slug(analysis: &ReleaseAnalysis) -> Result<String> {
+    let selected = analysis.package_plan.selected_packages();
+    if selected.is_empty() {
+        bail!("no releasable package set is pending from the current commit set");
+    }
+
+    let readable = sanitize_label(
+        &selected
+            .iter()
+            .take(2)
+            .map(|package| package.name.as_str())
+            .collect::<Vec<_>>()
+            .join("-"),
+    );
+    let readable = truncate_label(&readable, 24);
+    let digest_input = selected_package_summaries(analysis).join("|");
+    let digest = short_digest(&digest_input);
+
+    Ok(format!("{}pkgs-{}-{}", selected.len(), readable, digest))
 }
 
 fn monorepo_pr_title(config: &Config, analysis: &ReleaseAnalysis) -> Result<String> {
@@ -764,6 +779,18 @@ fn sanitize_label(value: &str) -> String {
         .collect::<String>()
         .trim_matches('-')
         .to_string()
+}
+
+fn truncate_label(value: &str, max_len: usize) -> String {
+    value.chars().take(max_len).collect()
+}
+
+fn short_digest(value: &str) -> String {
+    hex_digest(&sha256(value.as_bytes()))[..12].to_string()
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn today_utc() -> String {
@@ -1150,9 +1177,51 @@ mod tests {
         let analysis = monorepo_analysis();
 
         let plan = build_release_pr_plan(&config, &analysis, "main").expect("plan");
-        assert!(plan.branch.contains("monorepo"), "{}", plan.branch);
+        assert!(
+            plan.branch.starts_with("relx/release/monorepo/2pkgs-core-cli-"),
+            "{}",
+            plan.branch
+        );
+        assert!(plan.branch.len() < 64, "{}", plan.branch);
         assert!(plan.title.contains("core 1.2.0"), "{}", plan.title);
         assert!(plan.title.contains("cli 0.5.1"), "{}", plan.title);
+    }
+
+    #[test]
+    fn builds_bounded_monorepo_release_tag_plan() {
+        let dir = tempdir().expect("tempdir");
+        run(dir.path(), &["git", "init"]);
+        run(dir.path(), &["git", "checkout", "-b", "main"]);
+        run(dir.path(), &["git", "config", "user.name", "Relx Test"]);
+        run(
+            dir.path(),
+            &["git", "config", "user.email", "relx@example.com"],
+        );
+        run(dir.path(), &["git", "add", "."]);
+        run(dir.path(), &["git", "commit", "--allow-empty", "-m", "feat: initial"]);
+
+        let repo = GitRepository::discover(dir.path()).expect("repo");
+        let config: Config = toml::from_str(
+            r#"
+            [release]
+            tag_prefix = "v"
+
+            [monorepo]
+            enabled = true
+            release_mode = "unified"
+            packages = ["packages/core", "packages/cli"]
+            "#,
+        )
+        .expect("config");
+        let analysis = monorepo_analysis();
+
+        let plan = build_release_tag_plan(&config, &repo, &analysis).expect("plan");
+        assert!(
+            plan.tag_name.starts_with("v2pkgs-core-cli-"),
+            "{}",
+            plan.tag_name
+        );
+        assert!(plan.tag_name.len() < 64, "{}", plan.tag_name);
     }
 
     fn sample_analysis() -> ReleaseAnalysis {
