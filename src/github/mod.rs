@@ -149,7 +149,11 @@ pub fn build_release_tag_plan(
         .map(ToString::to_string)
         .unwrap_or_else(|| release_label.clone());
     let tag_name = if config.monorepo.enabled {
-        format!("{}{}", config.release.tag_prefix, monorepo_release_slug(analysis)?)
+        format!(
+            "{}{}",
+            config.release.tag_prefix,
+            monorepo_release_slug(analysis)?
+        )
     } else {
         format!("{}{}", config.release.tag_prefix, version)
     };
@@ -1178,7 +1182,8 @@ mod tests {
 
         let plan = build_release_pr_plan(&config, &analysis, "main").expect("plan");
         assert!(
-            plan.branch.starts_with("relx/release/monorepo/2pkgs-core-cli-"),
+            plan.branch
+                .starts_with("relx/release/monorepo/2pkgs-core-cli-"),
             "{}",
             plan.branch
         );
@@ -1198,7 +1203,10 @@ mod tests {
             &["git", "config", "user.email", "relx@example.com"],
         );
         run(dir.path(), &["git", "add", "."]);
-        run(dir.path(), &["git", "commit", "--allow-empty", "-m", "feat: initial"]);
+        run(
+            dir.path(),
+            &["git", "commit", "--allow-empty", "-m", "feat: initial"],
+        );
 
         let repo = GitRepository::discover(dir.path()).expect("repo");
         let config: Config = toml::from_str(
