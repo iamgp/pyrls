@@ -23,11 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install relx
-        uses: ./
-        with:
-          command: status
-          args: --help > /dev/null
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build relx from current checkout
+        run: cargo build --locked
 
       - name: Decide release action
         id: check
@@ -36,7 +36,7 @@ jobs:
           if echo "$msg" | grep -qP '^chore\(release\):'; then
             echo "mode=tag" >> "$GITHUB_OUTPUT"
           else
-            next_version="$(relx status --json | jq -r '.next_version // empty')"
+            next_version="$(./target/debug/relx status --json | jq -r '.next_version // empty')"
             if [ -n "$next_version" ]; then
               echo "mode=pr" >> "$GITHUB_OUTPUT"
             else
@@ -48,13 +48,13 @@ jobs:
         if: steps.check.outputs.mode == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: relx release tag
+        run: ./target/debug/relx release tag
 
       - name: Create or update release PR
         if: steps.check.outputs.mode == 'pr'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: relx release pr
+        run: ./target/debug/relx release pr
 
       - name: No release action required
         if: steps.check.outputs.mode == 'noop'
