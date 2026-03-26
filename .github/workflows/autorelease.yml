@@ -24,29 +24,38 @@ jobs:
           fetch-depth: 0
 
       - name: Install relx
-        uses: iamgp/ReleaseX@v0.4.0
+        uses: ./
         with:
           command: status
           args: --help > /dev/null
 
-      - name: Check if release commit
+      - name: Decide release action
         id: check
         run: |
           msg="$(git log -1 --format='%s')"
           if echo "$msg" | grep -qP '^chore\(release\):'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "mode=tag" >> "$GITHUB_OUTPUT"
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            next_version="$(relx status --json | jq -r '.next_version // empty')"
+            if [ -n "$next_version" ]; then
+              echo "mode=pr" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=noop" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
-      - name: Create or update release PR
-        if: steps.check.outputs.skip != 'true'
+      - name: Tag release
+        if: steps.check.outputs.mode == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          next_version="$(relx status --json | jq -r '.next_version // empty')"
-          if [ -n "$next_version" ]; then
-            relx release pr
-          else
-            echo "No releasable version bump detected on main."
-          fi
+        run: relx release tag
+
+      - name: Create or update release PR
+        if: steps.check.outputs.mode == 'pr'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: relx release pr
+
+      - name: No release action required
+        if: steps.check.outputs.mode == 'noop'
+        run: echo "No releasable version bump detected on main."
