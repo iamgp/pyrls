@@ -1,4 +1,4 @@
-use std::{env, path::Path};
+use std::{collections::BTreeMap, env, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use openssl::sha::sha256;
@@ -9,7 +9,7 @@ use tempfile::tempdir;
 use crate::{
     analysis::{self, ReleaseAnalysis},
     changelog, channels,
-    config::{Config, Ecosystem, GitHubConfig},
+    config::{Config, Ecosystem, GitHubConfig, VersionFileConfig},
     ecosystem,
     git::{GitRepository, run_git},
 };
@@ -34,7 +34,11 @@ fn release_commit_args(config: &Config, message: &str) -> Vec<String> {
     ]
 }
 
-fn refresh_lockfile(clone_path: &Path, config: &Config) -> Result<()> {
+fn refresh_lockfile(
+    clone_path: &Path,
+    config: &Config,
+    version_files: &[VersionFileConfig],
+) -> Result<()> {
     let detected = ecosystem::detect(clone_path, Some(config));
     match detected {
         Ecosystem::Rust if clone_path.join("Cargo.lock").exists() => {
@@ -47,6 +51,7 @@ fn refresh_lockfile(clone_path: &Path, config: &Config) -> Result<()> {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 bail!("cargo generate-lockfile failed: {}", stderr.trim());
             }
+            sync_cargo_lock_package_versions(clone_path, version_files)?;
         }
         Ecosystem::Python if clone_path.join("uv.lock").exists() => {
             let output = std::process::Command::new("uv")
@@ -61,6 +66,98 @@ fn refresh_lockfile(clone_path: &Path, config: &Config) -> Result<()> {
         }
         _ => {}
     }
+    Ok(())
+}
+
+fn sync_cargo_lock_package_versions(
+    repo_root: &Path,
+    version_files: &[VersionFileConfig],
+) -> Result<()> {
+    let cargo_tomls = version_files
+        .iter()
+        .filter(|vf| vf.path.ends_with("Cargo.toml"))
+        .collect::<Vec<_>>();
+    if cargo_tomls.is_empty() {
+        return Ok(());
+    }
+
+    let lock_path = repo_root.join("Cargo.lock");
+    let mut package_versions = BTreeMap::new();
+    for version_file in cargo_tomls {
+        let cargo_toml_path = repo_root.join(&version_file.path);
+        let raw = fs::read_to_string(&cargo_toml_path)
+            .with_context(|| format!("failed to read {}", cargo_toml_path.display()))?;
+        let parsed: toml::Value = toml::from_str(&raw)
+            .with_context(|| format!("failed to parse {}", cargo_toml_path.display()))?;
+        let package = parsed
+            .get("package")
+            .and_then(toml::Value::as_table)
+            .with_context(|| format!("missing [package] in {}", cargo_toml_path.display()))?;
+        let name = package
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .with_context(|| format!("missing package.name in {}", cargo_toml_path.display()))?;
+        let version = package
+            .get("version")
+            .and_then(toml::Value::as_str)
+            .with_context(|| format!("missing package.version in {}", cargo_toml_path.display()))?;
+        package_versions.insert(name.to_string(), version.to_string());
+    }
+
+    let raw_lock = fs::read_to_string(&lock_path)
+        .with_context(|| format!("failed to read {}", lock_path.display()))?;
+    let mut lines = raw_lock
+        .lines()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let mut changed = false;
+    let mut index = 0;
+
+    while index < lines.len() {
+        if lines[index] != "[[package]]" {
+            index += 1;
+            continue;
+        }
+
+        let block_start = index;
+        index += 1;
+        let mut block_end = index;
+        while block_end < lines.len() && lines[block_end] != "[[package]]" {
+            block_end += 1;
+        }
+
+        let mut name: Option<String> = None;
+        let mut version_index: Option<usize> = None;
+        let mut has_source = false;
+        for line_index in (block_start + 1)..block_end {
+            if let Some(value) = lines[line_index].strip_prefix("name = ") {
+                name = Some(value.trim_matches('"').to_string());
+            } else if lines[line_index].starts_with("version = ") {
+                version_index = Some(line_index);
+            } else if lines[line_index].starts_with("source = ") {
+                has_source = true;
+            }
+        }
+
+        if !has_source
+            && let (Some(name), Some(version_index)) = (name.as_deref(), version_index)
+            && let Some(target_version) = package_versions.get(name)
+        {
+            let desired_line = format!("version = \"{target_version}\"");
+            if lines[version_index] != desired_line {
+                lines[version_index] = desired_line;
+                changed = true;
+            }
+        }
+
+        index = block_end;
+    }
+
+    if changed {
+        fs::write(&lock_path, format!("{}\n", lines.join("\n")))
+            .with_context(|| format!("failed to write {}", lock_path.display()))?;
+    }
+
     Ok(())
 }
 
@@ -242,7 +339,7 @@ pub fn execute_release_pr(
         &clone_path.join(&config.release.changelog_file),
         &plan.release_notes,
     )?;
-    refresh_lockfile(&clone_path, config)?;
+    refresh_lockfile(&clone_path, config, &config.version_files)?;
 
     run_git(&clone_path, ["add", "."])?;
     let diff = run_git(&clone_path, ["status", "--short"])?;
@@ -355,7 +452,11 @@ fn execute_monorepo_unified_pr(
         &clone_path.join(&config.release.changelog_file),
         &plan.release_notes,
     )?;
-    refresh_lockfile(&clone_path, config)?;
+    let version_files = selected
+        .iter()
+        .flat_map(|package| package.version_files.iter().cloned())
+        .collect::<Vec<_>>();
+    refresh_lockfile(&clone_path, config, &version_files)?;
 
     run_git(&clone_path, ["add", "."])?;
     let diff = run_git(&clone_path, ["status", "--short"])?;
@@ -447,7 +548,7 @@ fn execute_monorepo_per_package_pr(
         format!("{}/{}", package.root, config.release.changelog_file)
     };
     changelog::prepend_release_notes(&clone_path.join(&changelog_path), &plan.release_notes)?;
-    refresh_lockfile(&clone_path, config)?;
+    refresh_lockfile(&clone_path, config, &package.version_files)?;
 
     run_git(&clone_path, ["add", "."])?;
     let diff = run_git(&clone_path, ["status", "--short"])?;
