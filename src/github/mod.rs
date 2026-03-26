@@ -34,6 +34,20 @@ fn release_commit_args(config: &Config, message: &str) -> Vec<String> {
     ]
 }
 
+fn release_tag_args(config: &Config, tag_name: &str, message: &str) -> Vec<String> {
+    vec![
+        "-c".to_string(),
+        format!("user.name={}", config.github.commit_author),
+        "-c".to_string(),
+        format!("user.email={}", config.github.commit_email),
+        "tag".to_string(),
+        "-a".to_string(),
+        tag_name.to_string(),
+        "-m".to_string(),
+        message.to_string(),
+    ]
+}
+
 fn refresh_lockfile(
     clone_path: &Path,
     config: &Config,
@@ -610,13 +624,7 @@ pub fn execute_release_tag(
 
     run_git(
         repo.path(),
-        [
-            "tag",
-            "-a",
-            plan.tag_name.as_str(),
-            "-m",
-            plan.title.as_str(),
-        ],
+        release_tag_args(config, plan.tag_name.as_str(), plan.title.as_str()),
     )?;
     run_git(repo.path(), ["push", "origin", plan.tag_name.as_str()])?;
 
@@ -659,13 +667,7 @@ pub fn execute_monorepo_release_tag(
 
         run_git(
             repo.path(),
-            [
-                "tag",
-                "-a",
-                plan.tag_name.as_str(),
-                "-m",
-                plan.title.as_str(),
-            ],
+            release_tag_args(config, plan.tag_name.as_str(), plan.title.as_str()),
         )?;
         run_git(repo.path(), ["push", "origin", plan.tag_name.as_str()])?;
 
