@@ -733,6 +733,9 @@ fn scan_python_version_files(
             }
 
             if path.is_dir() {
+                if path != package_root && is_nested_package_root(&path) {
+                    continue;
+                }
                 stack.push(path);
                 continue;
             }
@@ -754,6 +757,12 @@ fn scan_python_version_files(
     }
 
     Ok(())
+}
+
+fn is_nested_package_root(path: &Path) -> bool {
+    path.join("pyproject.toml").exists()
+        || path.join("Cargo.toml").exists()
+        || path.join("go.mod").exists()
 }
 
 fn detect_package_name(package_root: &Path) -> Option<String> {
@@ -1032,4 +1041,65 @@ fn resolve_contributor_identities(
             commit
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{detect_python_package_version_files, read_current_version};
+
+    #[test]
+    fn root_python_package_skips_nested_workspace_version_files() {
+        let dir = tempdir().expect("tempdir");
+        let repo_root = dir.path();
+
+        fs::create_dir_all(repo_root.join("src/phlo")).expect("create root package");
+        fs::write(
+            repo_root.join("pyproject.toml"),
+            r#"
+[project]
+name = "phlo"
+version = "0.7.0"
+"#,
+        )
+        .expect("write root pyproject");
+        fs::write(
+            repo_root.join("src/phlo/__init__.py"),
+            r#"__version__ = "0.7.0""#,
+        )
+        .expect("write root init");
+
+        fs::create_dir_all(repo_root.join("packages/plugin/src/plugin")).expect("create plugin");
+        fs::write(
+            repo_root.join("packages/plugin/pyproject.toml"),
+            r#"
+[project]
+name = "phlo-plugin"
+version = "0.2.1"
+"#,
+        )
+        .expect("write plugin pyproject");
+        fs::write(
+            repo_root.join("packages/plugin/src/plugin/__init__.py"),
+            r#"__version__ = "0.2.1""#,
+        )
+        .expect("write plugin init");
+
+        let version_files =
+            detect_python_package_version_files(repo_root, repo_root).expect("version files");
+
+        assert!(
+            version_files
+                .iter()
+                .all(|entry| !entry.path.starts_with("packages/plugin/")),
+            "nested workspace version files should not belong to the root package: {version_files:?}"
+        );
+
+        let current_version =
+            read_current_version(repo_root, &version_files).expect("read current version");
+        assert_eq!(current_version.as_deref(), Some("0.7.0"));
+    }
 }
