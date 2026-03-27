@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.8] - 2026-03-27
+
+### Fixed
+- ignore nested workspace version files for root packages
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (1 commit)
+
 ## [1.0.7] - 2026-03-27
 
 ### Fixed
