@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.7] - 2026-03-27
+
+### Fixed
+- honor unified monorepo release flow
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (1 commit)
+
 ## [1.0.6] - 2026-03-27
 
 ### Fixed
