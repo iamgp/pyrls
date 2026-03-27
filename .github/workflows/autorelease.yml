@@ -16,6 +16,9 @@ jobs:
   release-pr:
     name: Create or update release PR
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.check.outputs.mode }}
+      tag_name: ${{ steps.release_meta.outputs.tag_name }}
 
     steps:
       - name: Checkout
@@ -44,6 +47,13 @@ jobs:
             fi
           fi
 
+      - name: Determine release tag
+        id: release_meta
+        if: steps.check.outputs.mode == 'tag'
+        run: |
+          tag_name="v$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "relx") | .version')"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+
       - name: Tag release
         if: steps.check.outputs.mode == 'tag'
         env:
@@ -59,3 +69,14 @@ jobs:
       - name: No release action required
         if: steps.check.outputs.mode == 'noop'
         run: echo "No releasable version bump detected on main."
+
+  release-assets:
+    name: Build and publish release assets
+    needs: release-pr
+    if: needs.release-pr.outputs.mode == 'tag'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-pr.outputs.tag_name }}
+    secrets: inherit
