@@ -58,13 +58,7 @@ pub fn execute_monorepo(
     config: &Config,
     analysis: &ReleaseAnalysis,
 ) -> Result<()> {
-    let selected = analysis.package_plan.selected_packages();
-    if selected.is_empty() {
-        bail!("no releasable packages found in monorepo");
-    }
-
-    for package in &selected {
-        let package_root = repo_root.join(&package.root);
+    for (package_name, package_root) in monorepo_publish_targets(repo_root, analysis)? {
         let plan = build_plan(&package_root, &config.publish)?;
         let mut command = command_from_plan(&plan);
         let status = command
@@ -73,7 +67,7 @@ pub fn execute_monorepo(
             .with_context(|| {
                 format!(
                     "failed to launch {} publish command for {}",
-                    plan.provider, package.name
+                    plan.provider, package_name
                 )
             })?;
 
@@ -81,7 +75,7 @@ pub fn execute_monorepo(
             bail!(
                 "{} publish failed for {} with status {}",
                 plan.provider,
-                package.name,
+                package_name,
                 status
                     .code()
                     .map(|code| code.to_string())
@@ -91,7 +85,7 @@ pub fn execute_monorepo(
 
         println!(
             "Published {} ({} artifact(s)) with {} to {}",
-            package.name,
+            package_name,
             plan.dist_files.len(),
             plan.provider,
             plan.target_label()
@@ -99,6 +93,96 @@ pub fn execute_monorepo(
     }
 
     Ok(())
+}
+
+fn monorepo_publish_targets<'a>(
+    repo_root: &'a Path,
+    analysis: &'a ReleaseAnalysis,
+) -> Result<Vec<(&'a str, PathBuf)>> {
+    if analysis.package_plan.release_mode == "unified" {
+        return Ok(vec![("workspace", repo_root.to_path_buf())]);
+    }
+
+    let selected = analysis.package_plan.selected_packages();
+    if selected.is_empty() {
+        bail!("no releasable packages found in monorepo");
+    }
+
+    Ok(selected
+        .into_iter()
+        .map(|package| (package.name.as_str(), repo_root.join(&package.root)))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, path::Path};
+
+    use super::monorepo_publish_targets;
+    use crate::{
+        analysis::{PackagePlan, PackageReleaseAnalysis, ReleaseAnalysis},
+        changelog::PendingChangelog,
+        git::CommitSummary,
+        version::{BumpLevel, Version},
+    };
+
+    #[test]
+    fn unified_monorepo_publish_targets_repo_root() {
+        let repo_path = Path::new("/tmp/workspace");
+        let analysis = ReleaseAnalysis {
+            current_version: Version {
+                major: 0,
+                minor: 2,
+                patch: 0,
+                suffix: None,
+            },
+            next_version: Some(Version {
+                major: 0,
+                minor: 2,
+                patch: 1,
+                suffix: None,
+            }),
+            bump: BumpLevel::Patch,
+            commits: Vec::new(),
+            changelog: PendingChangelog {
+                sections: BTreeMap::new(),
+                contributors: Vec::new(),
+            },
+            package_plan: PackagePlan {
+                release_mode: "unified".to_string(),
+                discovery_source: "test".to_string(),
+                packages: vec![PackageReleaseAnalysis {
+                    name: "phlo".to_string(),
+                    root: ".".to_string(),
+                    current_version: Version {
+                        major: 0,
+                        minor: 2,
+                        patch: 0,
+                        suffix: None,
+                    },
+                    next_version: Some(Version {
+                        major: 0,
+                        minor: 2,
+                        patch: 1,
+                        suffix: None,
+                    }),
+                    bump: BumpLevel::Patch,
+                    changelog: PendingChangelog {
+                        sections: BTreeMap::new(),
+                        contributors: Vec::new(),
+                    },
+                    version_files: Vec::new(),
+                    commits: Vec::<CommitSummary>::new(),
+                    changed_paths: vec!["pyproject.toml".to_string()],
+                    selected: true,
+                    selection_reason: "test".to_string(),
+                }],
+            },
+        };
+
+        let targets = monorepo_publish_targets(repo_path, &analysis).expect("targets");
+        assert_eq!(targets, vec![("workspace", repo_path.to_path_buf())]);
+    }
 }
 
 pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {

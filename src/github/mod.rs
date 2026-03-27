@@ -261,10 +261,11 @@ pub fn build_release_tag_plan(
     let release_label = release_label(analysis)?;
     let version = analysis
         .next_version
-        .as_ref()
-        .map(ToString::to_string)
+        .clone()
+        .or_else(|| analysis.bump.apply(&analysis.current_version))
+        .map(|version| version.to_string())
         .unwrap_or_else(|| release_label.clone());
-    let tag_name = if config.monorepo.enabled {
+    let tag_name = if config.monorepo.enabled && analysis.package_plan.release_mode != "unified" {
         format!(
             "{}{}",
             config.release.tag_prefix,
@@ -654,6 +655,10 @@ pub fn execute_monorepo_release_tag(
     let selected = analysis.package_plan.selected_packages();
     if selected.is_empty() {
         bail!("no releasable packages found in monorepo");
+    }
+
+    if config.monorepo.release_mode == "unified" {
+        return execute_release_tag(repo, config, analysis);
     }
 
     let repo_ref = detect_repo(repo, &config.github)?;
@@ -1194,7 +1199,10 @@ fn parse_json<T: for<'de> Deserialize<'de>>(body: String) -> Result<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_release_pr_plan, build_release_tag_plan, parse_remote_url};
+    use super::{
+        build_release_pr_plan, build_release_tag_plan, parse_remote_url,
+        single_package_analysis,
+    };
     use crate::{
         analysis::{PackagePlan, PackageReleaseAnalysis, ReleaseAnalysis},
         changelog::PendingChangelog,
@@ -1332,8 +1340,44 @@ mod tests {
         let analysis = monorepo_analysis();
 
         let plan = build_release_tag_plan(&config, &repo, &analysis).expect("plan");
+        assert_eq!(plan.tag_name, "v1.2.0");
+    }
+
+    #[test]
+    fn builds_bounded_per_package_monorepo_release_tag_plan() {
+        let dir = tempdir().expect("tempdir");
+        run(dir.path(), &["git", "init"]);
+        run(dir.path(), &["git", "checkout", "-b", "main"]);
+        run(dir.path(), &["git", "config", "user.name", "Relx Test"]);
+        run(
+            dir.path(),
+            &["git", "config", "user.email", "relx@example.com"],
+        );
+        run(dir.path(), &["git", "add", "."]);
+        run(
+            dir.path(),
+            &["git", "commit", "--allow-empty", "-m", "feat: initial"],
+        );
+
+        let repo = GitRepository::discover(dir.path()).expect("repo");
+        let config: Config = toml::from_str(
+            r#"
+            [release]
+            tag_prefix = "v"
+
+            [monorepo]
+            enabled = true
+            release_mode = "per_package"
+            packages = ["packages/core", "packages/cli"]
+            "#,
+        )
+        .expect("config");
+        let package = &monorepo_analysis().package_plan.packages[0];
+        let analysis = single_package_analysis(&monorepo_analysis(), package);
+
+        let plan = build_release_tag_plan(&config, &repo, &analysis).expect("plan");
         assert!(
-            plan.tag_name.starts_with("v2pkgs-core-cli-"),
+            plan.tag_name.starts_with("v1pkgs-core-"),
             "{}",
             plan.tag_name
         );

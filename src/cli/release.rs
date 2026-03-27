@@ -172,7 +172,7 @@ pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
         ReleaseSubcommand::Publish => {
             if cli.dry_run {
                 publish::print_dry_run(repo.path(), &config)?;
-            } else if config.monorepo.enabled {
+            } else if config.monorepo.enabled && analysis.package_plan.release_mode != "unified" {
                 let sp = progress::spinner("Publishing monorepo packages…");
                 let result = publish::execute_monorepo(repo.path(), &config, &analysis);
                 sp.finish_and_clear();
