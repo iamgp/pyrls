@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.3] - 2026-03-28
+
+### Fixed
+- keep release_set PRs on one branch
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (1 commit)
+
 ## [1.1.2] - 2026-03-28
 
 ### Fixed
