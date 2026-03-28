@@ -227,10 +227,11 @@ pub fn build_release_pr_plan(
             .pr_title
             .replace("{version}", &format!("v{version}"))
     };
+    let base = channels::release_base_branch(config, current_branch);
     let branch = format!(
         "{}/{}",
         config.github.release_branch_prefix.trim_end_matches('/'),
-        release_branch_suffix(analysis)?
+        release_branch_suffix(analysis, &base)?
     );
     let date = today_utc();
     let release_notes = changelog::render_release_notes(
@@ -246,7 +247,7 @@ pub fn build_release_pr_plan(
     Ok(ReleasePrPlan {
         version,
         branch,
-        base: channels::release_base_branch(config, current_branch),
+        base,
         title,
         body,
         labels: vec![config.github.pending_label.clone()],
@@ -839,7 +840,7 @@ fn release_label(analysis: &ReleaseAnalysis) -> Result<String> {
     Ok(selected.join(", "))
 }
 
-fn release_branch_suffix(analysis: &ReleaseAnalysis) -> Result<String> {
+fn release_branch_suffix(analysis: &ReleaseAnalysis, base_branch: &str) -> Result<String> {
     if analysis.package_plan.release_mode == "single" {
         return Ok(format!(
             "v{}",
@@ -858,10 +859,21 @@ fn release_branch_suffix(analysis: &ReleaseAnalysis) -> Result<String> {
     if analysis.package_plan.release_mode == "unified"
         || analysis.package_plan.release_mode == "release_set"
     {
-        return Ok(format!("monorepo/{}", monorepo_release_slug(analysis)?));
+        return Ok(format!(
+            "monorepo/{}",
+            stable_monorepo_branch_slug(base_branch, &analysis.package_plan.release_mode)
+        ));
     }
 
     Ok(format!("per-package/{}", selected.len()))
+}
+
+fn stable_monorepo_branch_slug(base_branch: &str, release_mode: &str) -> String {
+    format!(
+        "{}-{}",
+        sanitize_label(base_branch).trim_matches('-'),
+        sanitize_label(release_mode).trim_matches('-')
+    )
 }
 
 fn monorepo_release_slug(analysis: &ReleaseAnalysis) -> Result<String> {
@@ -1380,12 +1392,7 @@ mod tests {
         let analysis = monorepo_analysis();
 
         let plan = build_release_pr_plan(&config, &analysis, "main").expect("plan");
-        assert!(
-            plan.branch
-                .starts_with("relx/release/monorepo/2pkgs-core-cli-"),
-            "{}",
-            plan.branch
-        );
+        assert_eq!(plan.branch, "relx/release/monorepo/main-unified");
         assert!(plan.branch.len() < 64, "{}", plan.branch);
         assert!(plan.title.contains("core 1.2.0"), "{}", plan.title);
         assert!(plan.title.contains("cli 0.5.1"), "{}", plan.title);
@@ -1485,17 +1492,158 @@ mod tests {
         };
 
         let plan = build_release_pr_plan(&config, &analysis, "main").expect("plan");
-        assert!(
-            plan.branch
-                .starts_with("relx/release/monorepo/2pkgs-phlo-phlo-delta-"),
-            "{}",
-            plan.branch
-        );
+        assert_eq!(plan.branch, "relx/release/monorepo/main-release-set");
         assert_eq!(plan.title, "chore(release): phlo 0.7.3 + 1 packages");
         assert!(
             plan.body.contains("## [phlo 0.7.3 + 1 packages] - "),
             "{}",
             plan.body
+        );
+    }
+
+    #[test]
+    fn release_set_monorepo_branch_stays_stable_as_package_set_grows() {
+        let config: Config = toml::from_str(
+            r#"
+            [release]
+            pr_title = "chore(release): {version}"
+
+            [monorepo]
+            enabled = true
+            release_mode = "release_set"
+            packages = [".", "packages/dbt", "packages/lineage"]
+            "#,
+        )
+        .expect("config");
+
+        let root_only = ReleaseAnalysis {
+            current_version: Version {
+                major: 0,
+                minor: 7,
+                patch: 7,
+                suffix: None,
+            },
+            next_version: Some(Version {
+                major: 0,
+                minor: 7,
+                patch: 8,
+                suffix: None,
+            }),
+            bump: BumpLevel::Patch,
+            commits: Vec::new(),
+            changelog: PendingChangelog {
+                sections: BTreeMap::new(),
+                contributors: Vec::new(),
+            },
+            package_plan: PackagePlan {
+                release_mode: "release_set".to_string(),
+                discovery_source: "test".to_string(),
+                packages: vec![PackageReleaseAnalysis {
+                    name: "phlo".to_string(),
+                    root: ".".to_string(),
+                    current_version: Version {
+                        major: 0,
+                        minor: 7,
+                        patch: 7,
+                        suffix: None,
+                    },
+                    next_version: Some(Version {
+                        major: 0,
+                        minor: 7,
+                        patch: 8,
+                        suffix: None,
+                    }),
+                    bump: BumpLevel::Patch,
+                    changelog: PendingChangelog {
+                        sections: BTreeMap::new(),
+                        contributors: Vec::new(),
+                    },
+                    version_files: Vec::new(),
+                    commits: Vec::new(),
+                    changed_paths: vec!["pyproject.toml".to_string()],
+                    selected: true,
+                    selection_reason: "test".to_string(),
+                }],
+            },
+        };
+        let expanded = ReleaseAnalysis {
+            package_plan: PackagePlan {
+                release_mode: "release_set".to_string(),
+                discovery_source: "test".to_string(),
+                packages: vec![
+                    root_only.package_plan.packages[0].clone(),
+                    PackageReleaseAnalysis {
+                        name: "phlo-dbt".to_string(),
+                        root: "packages/dbt".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 3,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 4,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::new(),
+                        changed_paths: vec!["packages/dbt/src/phlo_dbt/cli.py".to_string()],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                    PackageReleaseAnalysis {
+                        name: "phlo-lineage".to_string(),
+                        root: "packages/lineage".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 3,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 4,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::new(),
+                        changed_paths: vec![
+                            "packages/lineage/src/phlo_lineage/store.py".to_string(),
+                        ],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                ],
+            },
+            ..root_only.clone()
+        };
+
+        let initial_plan = build_release_pr_plan(&config, &root_only, "main").expect("root plan");
+        let expanded_plan =
+            build_release_pr_plan(&config, &expanded, "main").expect("expanded plan");
+
+        assert_eq!(
+            initial_plan.branch,
+            "relx/release/monorepo/main-release-set"
+        );
+        assert_eq!(expanded_plan.branch, initial_plan.branch);
+        assert_eq!(initial_plan.title, "chore(release): phlo 0.7.8");
+        assert_eq!(
+            expanded_plan.title,
+            "chore(release): phlo 0.7.8 + 2 packages"
         );
     }
 
