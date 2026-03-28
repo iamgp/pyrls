@@ -87,7 +87,11 @@ impl PendingChangelog {
             contributors.push(ContributorInfo {
                 name: name.clone(),
                 commit_count: *commit_count,
-                first_contribution: !known_authors.contains(name),
+                first_contribution: !commits.iter().filter(|commit| commit.author == *name).any(
+                    |commit| {
+                        known_authors.contains(name) || known_authors.contains(&commit.raw_author)
+                    },
+                ),
             });
         }
 
@@ -177,7 +181,10 @@ pub fn prepend_release_notes(path: &Path, release_notes: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+    };
 
     use crate::config::Config;
 
@@ -237,6 +244,36 @@ mod tests {
         assert!(notes.contains("## [1.2.0] - 2026-03-16"));
         assert!(notes.contains("### Added"));
         assert!(notes.contains("- ship it"));
+    }
+
+    #[test]
+    fn contributor_first_contribution_uses_raw_author_fallback() {
+        let mut changelog = PendingChangelog {
+            sections: BTreeMap::new(),
+            contributors: Vec::new(),
+        };
+        let commits = vec![crate::git::CommitSummary {
+            id: "abc123".to_string(),
+            message: "fix: example".to_string(),
+            changed_paths: vec!["src/lib.rs".to_string()],
+            author: "iamgp".to_string(),
+            raw_author: "Gareth Price".to_string(),
+        }];
+        let known_authors = BTreeSet::from(["Gareth Price".to_string()]);
+        let config: Config = toml::from_str(
+            r#"
+            [[version_files]]
+            path = "pyproject.toml"
+            key = "project.version"
+            "#,
+        )
+        .expect("config");
+
+        changelog.add_contributors(&commits, &known_authors, &config.changelog);
+
+        assert_eq!(changelog.contributors.len(), 1);
+        assert!(!changelog.contributors[0].first_contribution);
+        assert_eq!(changelog.contributors[0].name, "iamgp");
     }
 
     #[test]

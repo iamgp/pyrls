@@ -213,6 +213,7 @@ pub fn build_release_pr_plan(
     current_branch: &str,
 ) -> Result<ReleasePrPlan> {
     let release_label = release_label(analysis)?;
+    let release_notes_label = release_notes_label(analysis)?;
     let version = analysis
         .next_version
         .as_ref()
@@ -233,7 +234,7 @@ pub fn build_release_pr_plan(
     );
     let date = today_utc();
     let release_notes = changelog::render_release_notes(
-        &release_label,
+        &release_notes_label,
         &date,
         &analysis.changelog,
         &config.changelog.first_contribution_emoji,
@@ -259,6 +260,7 @@ pub fn build_release_tag_plan(
     analysis: &ReleaseAnalysis,
 ) -> Result<ReleaseTagPlan> {
     let release_label = release_label(analysis)?;
+    let release_notes_label = release_notes_label(analysis)?;
     let version = if analysis.package_plan.release_mode == "release_set" {
         release_set_title_label(analysis)?
     } else {
@@ -288,7 +290,7 @@ pub fn build_release_tag_plan(
         title,
         target: repo.current_branch()?,
         release_notes: changelog::render_release_notes(
-            &tag_name,
+            &release_notes_label,
             &today_utc(),
             &analysis.changelog,
             &config.changelog.first_contribution_emoji,
@@ -905,6 +907,14 @@ fn monorepo_single_tag_mode(mode: &str) -> bool {
     matches!(mode, "unified" | "release_set")
 }
 
+fn release_notes_label(analysis: &ReleaseAnalysis) -> Result<String> {
+    if analysis.package_plan.release_mode == "release_set" {
+        return release_set_title_label(analysis);
+    }
+
+    release_label(analysis)
+}
+
 fn release_set_title_label(analysis: &ReleaseAnalysis) -> Result<String> {
     let selected = analysis.package_plan.selected_packages();
     if selected.is_empty() {
@@ -1459,6 +1469,11 @@ mod tests {
             plan.branch
         );
         assert_eq!(plan.title, "chore(release): phlo 0.7.3 + 1 packages");
+        assert!(
+            plan.body.contains("## [phlo 0.7.3 + 1 packages] - "),
+            "{}",
+            plan.body
+        );
     }
 
     #[test]
@@ -1654,6 +1669,12 @@ mod tests {
         );
         assert!(plan.tag_name.len() < 64, "{}", plan.tag_name);
         assert_eq!(plan.title, plan.tag_name);
+        assert!(
+            plan.release_notes
+                .contains("## [phlo 0.7.3 + 1 packages] - "),
+            "{}",
+            plan.release_notes
+        );
     }
 
     fn sample_analysis() -> ReleaseAnalysis {

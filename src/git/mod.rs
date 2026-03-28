@@ -13,6 +13,7 @@ pub struct CommitSummary {
     pub message: String,
     pub changed_paths: Vec<String>,
     pub author: String,
+    pub raw_author: String,
 }
 
 pub struct GitRepository {
@@ -100,6 +101,7 @@ impl GitRepository {
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
                 author: commit.author().name().unwrap_or("unknown").to_string(),
+                raw_author: commit.author().name().unwrap_or("unknown").to_string(),
             });
         }
 
@@ -131,6 +133,7 @@ impl GitRepository {
                 message: commit.message().unwrap_or_default().trim().to_string(),
                 changed_paths,
                 author: commit.author().name().unwrap_or("unknown").to_string(),
+                raw_author: commit.author().name().unwrap_or("unknown").to_string(),
             });
         }
 
