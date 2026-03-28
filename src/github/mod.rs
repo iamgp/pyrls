@@ -262,7 +262,7 @@ pub fn build_release_tag_plan(
     let release_label = release_label(analysis)?;
     let release_notes_label = release_notes_label(analysis)?;
     let version = if analysis.package_plan.release_mode == "release_set" {
-        release_set_title_label(analysis)?
+        release_set_root_version(analysis)?.unwrap_or(release_set_title_label(analysis)?)
     } else {
         analysis
             .next_version
@@ -271,7 +271,17 @@ pub fn build_release_tag_plan(
             .map(|version| version.to_string())
             .unwrap_or_else(|| release_label.clone())
     };
-    let tag_name = if config.monorepo.enabled && analysis.package_plan.release_mode != "unified" {
+    let tag_name = if analysis.package_plan.release_mode == "release_set" {
+        if let Some(version) = release_set_root_version(analysis)? {
+            format!("{}{}", config.release.tag_prefix, version)
+        } else {
+            format!(
+                "{}{}",
+                config.release.tag_prefix,
+                monorepo_release_slug(analysis)?
+            )
+        }
+    } else if config.monorepo.enabled && analysis.package_plan.release_mode != "unified" {
         format!(
             "{}{}",
             config.release.tag_prefix,
@@ -947,6 +957,19 @@ fn release_set_title_label(analysis: &ReleaseAnalysis) -> Result<String> {
     Ok(format!("{} packages", selected.len()))
 }
 
+fn release_set_root_version(analysis: &ReleaseAnalysis) -> Result<Option<String>> {
+    let selected = analysis.package_plan.selected_packages();
+    let Some(root_package) = selected.iter().find(|package| package.root == ".") else {
+        return Ok(None);
+    };
+
+    let version = root_package
+        .next_version
+        .as_ref()
+        .context("selected package has no next version")?;
+    Ok(Some(version.to_string()))
+}
+
 fn sanitize_label(value: &str) -> String {
     value
         .chars()
@@ -1553,7 +1576,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_bounded_release_set_monorepo_release_tag_plan() {
+    fn builds_root_version_release_set_monorepo_release_tag_plan() {
         let dir = tempdir().expect("tempdir");
         run(dir.path(), &["git", "init"]);
         run(dir.path(), &["git", "checkout", "-b", "main"]);
@@ -1662,16 +1685,135 @@ mod tests {
         };
 
         let plan = build_release_tag_plan(&config, &repo, &analysis).expect("plan");
+        assert_eq!(plan.tag_name, "v0.7.3");
+        assert_eq!(plan.title, plan.tag_name);
         assert!(
-            plan.tag_name.starts_with("v2pkgs-phlo-phlo-delta-"),
+            plan.release_notes
+                .contains("## [phlo 0.7.3 + 1 packages] - "),
+            "{}",
+            plan.release_notes
+        );
+    }
+
+    #[test]
+    fn builds_bounded_package_only_release_set_monorepo_release_tag_plan() {
+        let dir = tempdir().expect("tempdir");
+        run(dir.path(), &["git", "init"]);
+        run(dir.path(), &["git", "checkout", "-b", "main"]);
+        run(dir.path(), &["git", "config", "user.name", "Relx Test"]);
+        run(
+            dir.path(),
+            &["git", "config", "user.email", "relx@example.com"],
+        );
+        run(dir.path(), &["git", "add", "."]);
+        run(
+            dir.path(),
+            &["git", "commit", "--allow-empty", "-m", "feat: initial"],
+        );
+
+        let repo = GitRepository::discover(dir.path()).expect("repo");
+        let config: Config = toml::from_str(
+            r#"
+            [release]
+            tag_prefix = "v"
+            release_name = "{tag_name}"
+
+            [monorepo]
+            enabled = true
+            release_mode = "release_set"
+            packages = ["packages/delta", "packages/minio"]
+            "#,
+        )
+        .expect("config");
+        let analysis = ReleaseAnalysis {
+            current_version: Version {
+                major: 0,
+                minor: 2,
+                patch: 3,
+                suffix: None,
+            },
+            next_version: Some(Version {
+                major: 0,
+                minor: 2,
+                patch: 4,
+                suffix: None,
+            }),
+            bump: BumpLevel::Patch,
+            commits: Vec::new(),
+            changelog: PendingChangelog {
+                sections: BTreeMap::new(),
+                contributors: Vec::new(),
+            },
+            package_plan: PackagePlan {
+                release_mode: "release_set".to_string(),
+                discovery_source: "test".to_string(),
+                packages: vec![
+                    PackageReleaseAnalysis {
+                        name: "phlo-delta".to_string(),
+                        root: "packages/delta".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 3,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 4,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::new(),
+                        changed_paths: vec!["packages/delta/src/mod.py".to_string()],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                    PackageReleaseAnalysis {
+                        name: "phlo-minio".to_string(),
+                        root: "packages/minio".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 3,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 4,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::new(),
+                        changed_paths: vec!["packages/minio/src/mod.py".to_string()],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                ],
+            },
+        };
+
+        let plan = build_release_tag_plan(&config, &repo, &analysis).expect("plan");
+        assert!(
+            plan.tag_name.starts_with("v2pkgs-phlo-delta-phlo-minio-"),
             "{}",
             plan.tag_name
         );
         assert!(plan.tag_name.len() < 64, "{}", plan.tag_name);
         assert_eq!(plan.title, plan.tag_name);
         assert!(
-            plan.release_notes
-                .contains("## [phlo 0.7.3 + 1 packages] - "),
+            plan.release_notes.contains("## [2 packages] - "),
             "{}",
             plan.release_notes
         );
