@@ -140,7 +140,7 @@ commit_email = "41898282+github-actions[bot]@users.noreply.github.com"
 [monorepo]
 enabled = false                         # set to true for multi-package repos
 packages = []                           # list of package directories
-release_mode = "unified"                # "unified" (one PR) or "per_package" (one PR each)
+release_mode = "unified"                # "unified", "release_set", or "per_package"
 ```
 
 ## CLI Reference
@@ -300,11 +300,12 @@ packages = [
   "packages/cli",
   "packages/sdk",
 ]
-release_mode = "per_package"  # or "unified"
+release_mode = "per_package"  # or "unified" / "release_set"
 ```
 
+- **`unified`** — one PR covering all changed packages, one repo-style tag/release, publish the whole workspace
+- **`release_set`** — one PR for whatever changed, short release titles, and publish only the packages that changed
 - **`per_package`** — one release PR per changed package
-- **`unified`** — one PR covering all changed packages
 
 Each package directory should contain its own `pyproject.toml`. relx detects which packages have changed and creates version bumps independently.
 
