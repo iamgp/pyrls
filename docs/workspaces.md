@@ -19,7 +19,7 @@ release_mode = "unified"
 `release_mode` values:
 
 - `unified`: one release PR for all selected packages
-- `release_set`: one release PR for the selected package set, with bounded set tags and selective publish targets
+- `release_set`: one release PR for whatever changed, short release titles, and publish only the packages that changed
 - `per_package`: a release PR set for individually changed packages
 
 ## uv workspace auto-discovery

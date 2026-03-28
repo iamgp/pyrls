@@ -303,8 +303,8 @@ packages = [
 release_mode = "per_package"  # or "unified" / "release_set"
 ```
 
-- **`unified`** — one PR covering all changed packages, one repo-style tag/release, publish the workspace output
-- **`release_set`** — one PR covering the selected package set, one bounded set tag/release, publish only the selected packages
+- **`unified`** — one PR covering all changed packages, one repo-style tag/release, publish the whole workspace
+- **`release_set`** — one PR for whatever changed, short release titles, and publish only the packages that changed
 - **`per_package`** — one release PR per changed package
 
 Each package directory should contain its own `pyproject.toml`. relx detects which packages have changed and creates version bumps independently.

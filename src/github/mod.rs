@@ -770,7 +770,7 @@ pub fn print_release_tag_dry_run(
     let plan = build_release_tag_plan(config, repo, analysis)?;
     if config.monorepo.enabled {
         println!(
-            "Would tag selected package set for {} mode: {}",
+            "Would tag this release set for {} mode: {}",
             analysis.package_plan.release_mode,
             selected_package_summaries(analysis).join(", ")
         );
