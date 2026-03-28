@@ -183,6 +183,98 @@ mod tests {
         let targets = monorepo_publish_targets(repo_path, &analysis).expect("targets");
         assert_eq!(targets, vec![("workspace", repo_path.to_path_buf())]);
     }
+
+    #[test]
+    fn release_set_monorepo_publish_targets_selected_packages() {
+        let repo_path = Path::new("/tmp/workspace");
+        let analysis = ReleaseAnalysis {
+            current_version: Version {
+                major: 0,
+                minor: 7,
+                patch: 2,
+                suffix: None,
+            },
+            next_version: Some(Version {
+                major: 0,
+                minor: 7,
+                patch: 3,
+                suffix: None,
+            }),
+            bump: BumpLevel::Patch,
+            commits: Vec::new(),
+            changelog: PendingChangelog {
+                sections: BTreeMap::new(),
+                contributors: Vec::new(),
+            },
+            package_plan: PackagePlan {
+                release_mode: "release_set".to_string(),
+                discovery_source: "test".to_string(),
+                packages: vec![
+                    PackageReleaseAnalysis {
+                        name: "phlo".to_string(),
+                        root: ".".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 7,
+                            patch: 2,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 7,
+                            patch: 3,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::<CommitSummary>::new(),
+                        changed_paths: vec!["pyproject.toml".to_string()],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                    PackageReleaseAnalysis {
+                        name: "phlo-delta".to_string(),
+                        root: "packages/phlo-delta".to_string(),
+                        current_version: Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 3,
+                            suffix: None,
+                        },
+                        next_version: Some(Version {
+                            major: 0,
+                            minor: 2,
+                            patch: 4,
+                            suffix: None,
+                        }),
+                        bump: BumpLevel::Patch,
+                        changelog: PendingChangelog {
+                            sections: BTreeMap::new(),
+                            contributors: Vec::new(),
+                        },
+                        version_files: Vec::new(),
+                        commits: Vec::<CommitSummary>::new(),
+                        changed_paths: vec!["packages/phlo-delta/src/mod.py".to_string()],
+                        selected: true,
+                        selection_reason: "test".to_string(),
+                    },
+                ],
+            },
+        };
+
+        let targets = monorepo_publish_targets(repo_path, &analysis).expect("targets");
+        assert_eq!(
+            targets,
+            vec![
+                ("phlo", repo_path.to_path_buf()),
+                ("phlo-delta", repo_path.join("packages/phlo-delta"),),
+            ]
+        );
+    }
 }
 
 pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {

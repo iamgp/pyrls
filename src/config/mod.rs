@@ -53,9 +53,9 @@ impl Config {
 
         if !matches!(
             self.monorepo.release_mode.as_str(),
-            "unified" | "per_package"
+            "unified" | "release_set" | "per_package"
         ) {
-            bail!("monorepo.release_mode must be one of: unified, per_package");
+            bail!("monorepo.release_mode must be one of: unified, release_set, per_package");
         }
 
         for package in &self.monorepo.packages {
@@ -509,6 +509,21 @@ mod tests {
                 enabled: true,
                 packages: vec!["packages/core".to_string()],
                 release_mode: "per_package".to_string(),
+            },
+            version_files: Vec::new(),
+            ..toml::from_str("").expect("default config")
+        };
+
+        config.validate().expect("validation should pass");
+    }
+
+    #[test]
+    fn monorepo_config_accepts_release_set_mode() {
+        let config = Config {
+            monorepo: super::MonorepoConfig {
+                enabled: true,
+                packages: vec!["packages/core".to_string()],
+                release_mode: "release_set".to_string(),
             },
             version_files: Vec::new(),
             ..toml::from_str("").expect("default config")

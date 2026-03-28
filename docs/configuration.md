@@ -169,7 +169,7 @@ Examples:
 
 - `enabled`: treat the repository as multi-package
 - `packages`: explicit package roots
-- `release_mode`: `unified` or `per_package`
+- `release_mode`: `unified`, `release_set`, or `per_package`
 
 If `packages` is empty and a `uv` workspace is present, `relx` can auto-discover members.
 
