@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0] - 2026-03-28
+
+### Added
+- add release_set monorepo mode (#31)
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (1 commit)
+
 ## [1.0.8] - 2026-03-27
 
 ### Fixed
