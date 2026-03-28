@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.4] - 2026-03-28
+
+### Fixed
+- publish only changed release_set packages
+
+### Contributors
+Thanks to our contributors for this release:
+- @iamgp (1 commit)
+
 ## [1.1.3] - 2026-03-28
 
 ### Fixed
