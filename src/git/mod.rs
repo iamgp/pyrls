@@ -78,6 +78,19 @@ impl GitRepository {
         }
     }
 
+    pub fn previous_tag_before_head(&self) -> Result<Option<String>> {
+        let tags_at_head = run_git(self.path(), ["tag", "--points-at", "HEAD"])?;
+        if tags_at_head.lines().next().is_none() {
+            return Ok(None);
+        }
+
+        match run_git(self.path(), ["describe", "--tags", "--abbrev=0", "HEAD^"]) {
+            Ok(tag) if !tag.trim().is_empty() => Ok(Some(tag)),
+            Ok(_) => Ok(None),
+            Err(_) => Ok(None),
+        }
+    }
+
     pub fn commits_since_latest_tag(&self) -> Result<Vec<CommitSummary>> {
         let head = self.inner.head()?.peel_to_commit()?;
         let last_tag_commit = self
