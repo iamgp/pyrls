@@ -1812,6 +1812,11 @@ mod tests {
         );
         assert!(plan.tag_name.len() < 64, "{}", plan.tag_name);
         assert_eq!(plan.title, plan.tag_name);
+        assert!(
+            plan.release_notes.contains("## [2 packages] - "),
+            "{}",
+            plan.release_notes
+        );
     }
 
     fn sample_analysis() -> ReleaseAnalysis {
