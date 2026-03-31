@@ -47,6 +47,7 @@ repository = "pypi"
 dist_dir = "dist"
 trusted_publishing = false
 oidc = false
+skip_published = false
 # repository_url = "https://test.pypi.org/legacy/"
 # token_env = "PYPI_TOKEN"
 # username_env = "PYPI_USERNAME"
@@ -147,6 +148,7 @@ Use `[changelog.sections]` to map commit types to section names. Set a type to `
 - `dist_dir`: artifact directory
 - `trusted_publishing`: indicate trusted publishing is intended
 - `oidc`: use GitHub Actions OIDC token exchange for PyPI
+- `skip_published`: skip packages already published to the registry (can also use `--skip-published` CLI flag)
 - `token_env`, `username_env`, `password_env`: credentials to source from environment variables
 
 Examples:

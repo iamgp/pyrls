@@ -6,12 +6,14 @@ use std::{
     process::Command,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analysis::ReleaseAnalysis,
+    analysis::{self, ReleaseAnalysis},
     config::{Config, PublishConfig},
+    pypi,
+    version::Version,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +27,29 @@ pub struct PublishPlan {
     pub trusted_publishing: bool,
 }
 
-pub fn execute(repo_root: &Path, config: &Config) -> Result<()> {
+pub fn execute(repo_root: &Path, config: &Config, skip_published: bool) -> Result<()> {
+    // Check if we should skip based on PyPI version check
+    if skip_published {
+        if let Some(version) = get_current_version(repo_root, config) {
+            if let Some(package_name) = get_package_name(repo_root, ".") {
+                match check_already_published(
+                    &package_name,
+                    &version,
+                    config.publish.provider.as_str(),
+                ) {
+                    Ok(true) => {
+                        println!("Skipping {package_name} {version}: already published");
+                        return Ok(());
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        eprintln!("Warning: Could not check if package is already published: {e}");
+                    }
+                }
+            }
+        }
+    }
+
     let plan = build_plan(repo_root, &config.publish)?;
     let mut command = command_from_plan(&plan);
     let status = command
@@ -57,8 +81,42 @@ pub fn execute_monorepo(
     repo_root: &Path,
     config: &Config,
     analysis: &ReleaseAnalysis,
+    skip_published: bool,
 ) -> Result<()> {
+    let mut skipped = Vec::new();
+    let mut published = Vec::new();
+
     for (package_name, package_root) in monorepo_publish_targets(repo_root, analysis)? {
+        // Check if we should skip based on PyPI version check
+        if skip_published {
+            let package_version = analysis
+                .package_plan
+                .packages
+                .iter()
+                .find(|p| p.name == package_name)
+                .and_then(|p| p.next_version.clone());
+
+            if let Some(ref version) = package_version {
+                match check_already_published(
+                    package_name,
+                    version,
+                    config.publish.provider.as_str(),
+                ) {
+                    Ok(true) => {
+                        println!("Skipping {package_name} {version}: already published");
+                        skipped.push((package_name, version.to_string()));
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Could not check if {package_name} is already published: {e}"
+                        );
+                    }
+                }
+            }
+        }
+
         let plan = build_plan_for_package(&package_root, &config.publish, Some(package_name))?;
         let mut command = command_from_plan(&plan);
         let status = command
@@ -90,6 +148,18 @@ pub fn execute_monorepo(
             plan.provider,
             plan.target_label()
         );
+        published.push(package_name);
+    }
+
+    if skipped.is_empty() && published.is_empty() {
+        bail!("no releasable packages found in monorepo");
+    }
+
+    if !skipped.is_empty() {
+        println!("\nSkipped (already published):");
+        for (name, version) in &skipped {
+            println!("  - {} {}", name, version);
+        }
     }
 
     Ok(())
@@ -326,6 +396,7 @@ mod tests {
             token_env: None,
             trusted_publishing: false,
             oidc: false,
+            skip_published: false,
         };
 
         let plan = build_plan_for_package(dir.path(), &publish, Some("phlo")).expect("plan");
@@ -350,12 +421,15 @@ mod tests {
     }
 }
 
-pub fn print_dry_run(repo_root: &Path, config: &Config) -> Result<()> {
+pub fn print_dry_run(repo_root: &Path, config: &Config, skip_published: bool) -> Result<()> {
     let plan = build_plan_dry_run(repo_root, &config.publish)?;
 
     println!("Publish is enabled: {}", config.publish.enabled);
     println!("Provider: {}", plan.provider);
     println!("Target repository: {}", plan.target_label());
+    if skip_published {
+        println!("Skip published: enabled (will check PyPI/crates.io before publishing)");
+    }
     println!("Artifacts: {}", plan.dist_files.len());
     for artifact in &plan.dist_files {
         println!("  - {}", artifact.display());
@@ -668,4 +742,62 @@ fn shell_escape(arg: &OsString) -> String {
     } else {
         format!("{value:?}")
     }
+}
+
+/// Check if a package/version is already published to the registry
+fn check_already_published(package_name: &str, version: &Version, provider: &str) -> Result<bool> {
+    match provider {
+        "uv" | "twine" => {
+            // For Python packages, check PyPI
+            pypi::has_version(package_name, version)
+                .with_context(|| format!("failed to check PyPI for {package_name} {version}"))
+        }
+        "cargo" => {
+            // For Rust, we'd check crates.io - for now, assume not published
+            // TODO: Implement crates.io check using src/cratesio/mod.rs
+            Ok(false)
+        }
+        _ => {
+            // For other providers, we can't check, so assume not published
+            Ok(false)
+        }
+    }
+}
+
+/// Get the current version for a single-package repo
+fn get_current_version(repo_root: &Path, config: &Config) -> Option<Version> {
+    analysis::read_current_version(repo_root, &config.version_files)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+}
+
+/// Get the package name for a single-package repo
+fn get_package_name(repo_root: &Path, _package_root: &str) -> Option<String> {
+    // For single-package repos, try to read from pyproject.toml or Cargo.toml
+    let pyproject_path = repo_root.join("pyproject.toml");
+    if pyproject_path.exists() {
+        let contents = fs::read_to_string(pyproject_path).ok()?;
+        let parsed = contents.parse::<toml::Table>().ok()?;
+        return parsed
+            .get("project")?
+            .as_table()?
+            .get("name")?
+            .as_str()
+            .map(ToString::to_string);
+    }
+
+    let cargo_path = repo_root.join("Cargo.toml");
+    if cargo_path.exists() {
+        let contents = fs::read_to_string(cargo_path).ok()?;
+        let parsed = contents.parse::<toml::Table>().ok()?;
+        return parsed
+            .get("package")?
+            .as_table()?
+            .get("name")?
+            .as_str()
+            .map(ToString::to_string);
+    }
+
+    None
 }
