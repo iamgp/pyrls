@@ -269,6 +269,8 @@ pub struct PublishConfig {
     #[serde(default)]
     pub oidc: bool,
     #[serde(default)]
+    pub skip_published: bool,
+    #[serde(default)]
     pub username_env: Option<String>,
     #[serde(default)]
     pub password_env: Option<String>,
@@ -286,6 +288,7 @@ impl Default for PublishConfig {
             dist_dir: default_publish_dist_dir(),
             trusted_publishing: false,
             oidc: false,
+            skip_published: false,
             username_env: None,
             password_env: None,
             token_env: None,

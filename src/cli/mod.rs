@@ -74,7 +74,7 @@ pub struct ReleaseCommand {
 pub enum ReleaseSubcommand {
     Pr(PreReleaseArgs),
     Tag(PreReleaseArgs),
-    Publish,
+    Publish(PublishArgs),
 }
 
 #[derive(Debug, Args)]
@@ -95,6 +95,13 @@ pub struct PreReleaseArgs {
     /// Strip the pre-release suffix to produce a final release
     #[arg(long, conflicts_with = "pre_release")]
     pub finalize: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct PublishArgs {
+    /// Skip packages that are already published to PyPI/crates.io
+    #[arg(long)]
+    pub skip_published: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]

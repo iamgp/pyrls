@@ -120,6 +120,7 @@ repository = "pypi"                     # repository name or custom URL
 # repository_url = "https://..."       # optional: explicit index URL
 dist_dir = "dist"                       # directory containing built distributions
 trusted_publishing = false              # enable OIDC Trusted Publisher (no token needed)
+# skip_published = true                 # skip packages already on PyPI (for retries)
 # username_env = "PYPI_USERNAME"        # env var for username (optional)
 # password_env = "PYPI_PASSWORD"        # env var for password (optional)
 # token_env = "PYPI_TOKEN"             # env var for API token (optional)
@@ -208,6 +209,7 @@ Publish artifacts using the configured provider. Python uses `uv` or `twine`, Ru
 ```bash
 relx release publish
 relx release publish --dry-run
+relx release publish --skip-published  # skip packages already on PyPI (useful for retries)
 ```
 
 ## GitHub Actions

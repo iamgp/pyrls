@@ -193,7 +193,7 @@ pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
                 result?;
             }
         }
-        ReleaseSubcommand::Publish => {
+        ReleaseSubcommand::Publish(args) => {
             let analysis = if cli.dry_run {
                 analysis::analyze(&repo, &config)?
             } else {
@@ -203,15 +203,16 @@ pub fn run(cli: &Cli, command: &ReleaseCommand) -> Result<()> {
                 result?
             };
             if cli.dry_run {
-                publish::print_dry_run(repo.path(), &config)?;
+                publish::print_dry_run(repo.path(), &config, args.skip_published)?;
             } else if config.monorepo.enabled && analysis.package_plan.release_mode != "unified" {
                 let sp = progress::spinner("Publishing monorepo packages…");
-                let result = publish::execute_monorepo(repo.path(), &config, &analysis);
+                let result =
+                    publish::execute_monorepo(repo.path(), &config, &analysis, args.skip_published);
                 sp.finish_and_clear();
                 result?;
             } else {
                 let sp = progress::spinner("Publishing…");
-                let result = publish::execute(repo.path(), &config);
+                let result = publish::execute(repo.path(), &config, args.skip_published);
                 sp.finish_and_clear();
                 result?;
             }
